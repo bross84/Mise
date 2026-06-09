@@ -1,5 +1,10 @@
 # Plan
 
+## 2026-06-09
+
+- Prompt 18 — Serving scaler toggle polished (replaced checkboxes with a proper pill toggle) — completed by Claude Code.
+- Prompt 19 — Surprise Me button (Shuffle icon, navigates to random recipe, amber accent styling) — completed by Claude Code.
+
 ## 2026-06-08
 
 - Implemented sidebar navigation and route restructure in frontend app shell.
