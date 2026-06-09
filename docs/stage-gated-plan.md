@@ -5,6 +5,9 @@
 ### Stage: Implemented
 - Prompt 18 — Serving scaler toggle polished (replaced checkboxes with a proper pill toggle) — completed by Claude Code.
 - Prompt 19 — Surprise Me button (Shuffle icon, navigates to random recipe, amber accent styling) — completed by Claude Code.
+- Frontend recipe and ingredient pages migrated to the FastAPI client, with API env files added and mock imports removed from active pages.
+- Recipe description field removed from Add Recipe form/save payload and from mock recipe objects; backend recipe schema/model already had no description field.
+- Recipe Detail now includes a top-right destructive Delete Recipe button (Trash2 icon) with confirm dialog, delete API call, redirect, and failure alert.
 
 ## 2026-06-08
 

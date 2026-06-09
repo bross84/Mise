@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { mockIngredients } from '../assets/mockIngredients.js'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { createRecipe, getIngredients } from '../api/client.js'
 
 const inputClassName =
  'w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
@@ -31,57 +32,61 @@ function createStep(initialValues = {}) {
  }
 }
 
-function buildMockParsedRecipe() {
+function buildEmptyRecipeDraft() {
  return {
- title: 'High-Protein Taco Bowl',
- description: 'Weeknight bowl with seasoned beef, beans, rice, and toppings.',
- servings: 4,
- tags: ['high protein', 'meal prep', 'mexican-inspired'],
- ingredients: [
- createIngredient({ name: 'Lean Ground Beef', amount: '500', unit: 'g' }),
- createIngredient({ name: 'Brown Rice', amount: '2', unit: 'cups cooked' }),
- createIngredient({ name: 'Black Beans', amount: '1', unit: 'can' }),
- createIngredient({ name: 'Tomato Salsa', amount: '1', unit: 'cup' }),
- createIngredient({ name: 'Avocado', amount: '1', unit: 'large' }),
- ],
- steps: [
- createStep({
- title: 'Cook the beef',
- content: 'Brown beef in a skillet, season with spices, and simmer until cooked through.',
- timerSeconds: '480',
- }),
- createStep({
- title: 'Warm grains and beans',
- content: 'Heat rice and beans until hot, then combine in serving bowls.',
- timerSeconds: '240',
- }),
- createStep({
- title: 'Assemble bowls',
- content: 'Top with beef, salsa, and avocado. Serve immediately.',
- timerSeconds: '',
- }),
- ],
- notes: 'Great for leftovers. Store components separately for best texture.',
+ title: '',
+ servings: 1,
+ tags: [],
+ ingredients: [createIngredient()],
+ steps: [createStep()],
+ notes: '',
  }
 }
 
+
 function AddRecipe() {
- const [stage, setStage] = useState('input')
- const [rawText, setRawText] = useState('')
- const [sourceUrl, setSourceUrl] = useState('')
- const [tagInput, setTagInput] = useState('')
- const [recipeDraft, setRecipeDraft] = useState(() => buildMockParsedRecipe())
+  const navigate = useNavigate()
+  const [stage, setStage] = useState('input')
+  const [rawText, setRawText] = useState('')
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [tagInput, setTagInput] = useState('')
+  const [recipeDraft, setRecipeDraft] = useState(() => buildEmptyRecipeDraft())
+  const [ingredientNameSet, setIngredientNameSet] = useState(() => new Set())
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
- const ingredientNameSet = useMemo(
- () => new Set(mockIngredients.map((ingredient) => ingredient.name.trim().toLowerCase())),
- [],
- )
+  useEffect(() => {
+    let active = true
 
- const isIngredientMatched = (name) => ingredientNameSet.has(name.trim().toLowerCase())
+    async function loadIngredients() {
+      try {
+        const data = await getIngredients()
+        if (!active) {
+          return
+        }
 
- const updateDraftField = (field, value) => {
- setRecipeDraft((currentDraft) => ({ ...currentDraft, [field]: value }))
- }
+        setIngredientNameSet(
+          new Set((Array.isArray(data) ? data : []).map((ingredient) => ingredient.name.trim().toLowerCase())),
+        )
+      } catch {
+        if (active) {
+          setIngredientNameSet(new Set())
+        }
+      }
+    }
+
+    void loadIngredients()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const isIngredientMatched = (name) => ingredientNameSet.has(name.trim().toLowerCase())
+
+  const updateDraftField = (field, value) => {
+    setRecipeDraft((currentDraft) => ({ ...currentDraft, [field]: value }))
+  }
 
  const updateIngredient = (ingredientId, field, value) => {
  setRecipeDraft((currentDraft) => ({
@@ -129,55 +134,66 @@ function AddRecipe() {
  }))
  }
 
- const handleParseRecipe = () => {
- setRecipeDraft(buildMockParsedRecipe())
- setTagInput('')
- setStage('review')
- }
+  const handleParseRecipe = () => {
+    const guessedTitle =
+      rawText.trim().split(/\r?\n/).find(Boolean)?.slice(0, 80) || 'Untitled Recipe'
 
- const handleStartOver = () => {
- setRawText('')
- setSourceUrl('')
- setTagInput('')
- setRecipeDraft(buildMockParsedRecipe())
- setStage('input')
- }
+    setRecipeDraft((currentDraft) => ({
+      ...currentDraft,
+      title: currentDraft.title.trim() ? currentDraft.title : guessedTitle,
+      notes: currentDraft.notes.trim() ? currentDraft.notes : rawText.trim(),
+    }))
+    setTagInput('')
+    setSaveError('')
+    setStage('review')
+  }
 
- const handleSaveRecipe = (event) => {
- event.preventDefault()
+  const handleStartOver = () => {
+    setRawText('')
+    setSourceUrl('')
+    setTagInput('')
+    setRecipeDraft(buildEmptyRecipeDraft())
+    setSaveError('')
+    setStage('input')
+  }
 
- const assembledRecipe = {
- id: Date.now(),
- title: recipeDraft.title.trim(),
- description: recipeDraft.description.trim(),
- servings: Number(recipeDraft.servings) || 1,
- tags: recipeDraft.tags,
- ingredients: recipeDraft.ingredients
- .filter((ingredient) => ingredient.name.trim() || ingredient.amount || ingredient.unit.trim())
- .map((ingredient) => ({
- id: ingredient.id,
- name: ingredient.name.trim(),
- amount: ingredient.amount,
- unit: ingredient.unit.trim(),
- matched: isIngredientMatched(ingredient.name),
- })),
- steps: recipeDraft.steps
- .filter((step) => step.title.trim() || step.content.trim() || step.timerSeconds)
- .map((step) => ({
- id: step.id,
- title: step.title.trim(),
- content: step.content.trim(),
- timer_seconds: step.timerSeconds === '' ? null : Number(step.timerSeconds),
- })),
- notes: recipeDraft.notes,
- source: {
- pastedText: rawText,
- url: sourceUrl,
- },
- }
+  const handleSaveRecipe = async (event) => {
+    event.preventDefault()
+    setSaveError('')
+    setSaving(true)
 
- console.log(assembledRecipe)
- }
+    const assembledRecipe = {
+      title: recipeDraft.title.trim(),
+      servings: Number(recipeDraft.servings) || 1,
+      tags: recipeDraft.tags,
+      ingredients: recipeDraft.ingredients
+        .filter((ingredient) => ingredient.name.trim() || ingredient.amount || ingredient.unit.trim())
+        .map((ingredient) => ({
+          id: ingredient.id,
+          name: ingredient.name.trim(),
+          amount: Number(ingredient.amount) || 0,
+          unit: ingredient.unit.trim(),
+        })),
+      steps: recipeDraft.steps
+        .filter((step) => step.title.trim() || step.content.trim() || step.timerSeconds)
+        .map((step) => ({
+          id: step.id,
+          title: step.title.trim(),
+          content: step.content.trim(),
+          timer_seconds: step.timerSeconds === '' ? null : Number(step.timerSeconds),
+        })),
+      notes: recipeDraft.notes.trim() || null,
+    }
+
+    try {
+      const createdRecipe = await createRecipe(assembledRecipe)
+      navigate(`/recipe/${createdRecipe.id}`)
+    } catch (requestError) {
+      setSaveError(requestError instanceof Error ? requestError.message : 'Failed to save recipe.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
  if (stage === 'input') {
  return (
@@ -246,6 +262,12 @@ function AddRecipe() {
  <p className="mt-2 text-sm text-mise-500">Edit parsed fields inline before saving.</p>
  </header>
 
+ {saveError && (
+ <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+ {saveError}
+ </div>
+ )}
+
  <form onSubmit={handleSaveRecipe} className="mt-6 space-y-6">
  <div className="grid gap-4 md:grid-cols-2">
  <div className="md:col-span-2">
@@ -257,20 +279,6 @@ function AddRecipe() {
  type="text"
  value={recipeDraft.title}
  onChange={(event) => updateDraftField('title', event.target.value)}
- className={inputClassName}
- required
- />
- </div>
-
- <div className="md:col-span-2">
- <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-description">
- Description
- </label>
- <input
- id="recipe-description"
- type="text"
- value={recipeDraft.description}
- onChange={(event) => updateDraftField('description', event.target.value)}
  className={inputClassName}
  required
  />
@@ -542,8 +550,8 @@ function AddRecipe() {
  </div>
 
  <div className="flex flex-wrap items-center gap-3">
- <button type="submit" className={primaryButtonClassName}>
- Save Recipe
+ <button type="submit" disabled={saving} className={primaryButtonClassName}>
+ {saving ? 'Saving...' : 'Save Recipe'}
  </button>
  <button type="button" onClick={handleStartOver} className={secondaryButtonClassName}>
  Start Over

@@ -2,7 +2,6 @@ export const mockRecipes = [
   {
     id: 1,
     title: 'Spicy Taco Bowls',
-    description: 'Bold, high-protein weeknight dinner',
     tags: ['beef', 'mexican', 'high protein'],
     servings: 4,
     ingredients: [
@@ -37,7 +36,6 @@ export const mockRecipes = [
   {
     id: 2,
     title: 'Lemon Garlic Salmon',
-    description: 'Sheet-pan salmon with roasted greens and potatoes',
     tags: ['fish', 'mediterranean', 'meal prep'],
     servings: 2,
     ingredients: [
@@ -72,7 +70,6 @@ export const mockRecipes = [
   {
     id: 3,
     title: 'Coconut Chickpea Curry',
-    description: 'Creamy pantry-friendly curry for fast dinners',
     tags: ['vegetarian', 'indian', 'one pot'],
     servings: 4,
     ingredients: [
@@ -107,7 +104,6 @@ export const mockRecipes = [
   {
     id: 4,
     title: 'Turkey Breakfast Burritos',
-    description: 'Freezer-ready wraps for high-protein mornings',
     tags: ['turkey', 'breakfast', 'high protein'],
     servings: 6,
     ingredients: [
