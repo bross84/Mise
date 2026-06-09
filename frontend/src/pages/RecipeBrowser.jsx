@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Shuffle, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { mockRecipes } from '../assets/mockRecipes.js'
 
 const tagHeaderTheme = {
@@ -44,6 +44,11 @@ function RecipeBrowser() {
  })
  }, [searchQuery])
 
+ const handleSurpriseMe = () => {
+ const random = mockRecipes[Math.floor(Math.random() * mockRecipes.length)]
+ navigate(`/recipe/${random.id}`)
+ }
+
  const setRecipeRating = (recipeId, nextRating) => {
  setRatingsByRecipeId((currentRatings) => {
  const currentRating = currentRatings[recipeId] || null
@@ -58,9 +63,19 @@ function RecipeBrowser() {
 
  return (
  <section className="mx-auto w-full max-w-7xl">
- <header>
+ <header className="flex items-center justify-between gap-4">
+ <div>
  <h1 className="font-display text-3xl font-semibold text-mise-300">Recipe Browser</h1>
  <p className="mt-2 text-sm text-mise-500">Search recipes by title or tags.</p>
+ </div>
+ <button
+ type="button"
+ onClick={handleSurpriseMe}
+ className="inline-flex shrink-0 items-center gap-2 rounded border border-ember px-3 py-2 text-sm font-medium text-ember transition hover:bg-ember/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+ >
+ <Shuffle size={15} />
+ Surprise Me
+ </button>
  </header>
 
  <div className="mt-6">
