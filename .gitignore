@@ -134,3 +134,21 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Python / FastAPI
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# SQLite database
+*.db
+*.sqlite
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
