@@ -89,7 +89,7 @@ function IngredientDatabase() {
  {showAddForm && (
  <form
  onSubmit={handleAddIngredient}
- className="mt-4 rounded border border-white/10 bg-mise-900 p-4"
+ className="mt-4 rounded border border-theme bg-mise-900 p-4"
  >
  <h2 className="text-lg font-semibold text-mise-300">Add Ingredient</h2>
  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -168,7 +168,7 @@ function IngredientDatabase() {
  </form>
  )}
 
- <div className="mt-6 overflow-x-auto rounded border border-white/10 bg-mise-900">
+ <div className="mt-6 overflow-x-auto rounded border border-theme bg-mise-900">
  <table className="min-w-full divide-y divide-mise-800 text-left text-sm">
  <thead className="bg-mise-950/60 text-xs uppercase tracking-wide text-mise-500">
  <tr>
@@ -190,7 +190,7 @@ function IngredientDatabase() {
  </tr>
  ) : (
  filteredIngredients.map((ingredient) => (
- <tr key={ingredient.id} className="hover:bg-mise-950/40">
+ <tr key={ingredient.id} className="hover:bg-mise-800/30">
  <td className="whitespace-nowrap px-4 py-3 font-medium text-mise-300">{ingredient.name}</td>
  <td className="whitespace-nowrap px-4 py-3">{ingredient.calories}</td>
  <td className="whitespace-nowrap px-4 py-3">{ingredient.protein}</td>

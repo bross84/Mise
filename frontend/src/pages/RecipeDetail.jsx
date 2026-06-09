@@ -129,7 +129,7 @@ function RecipeDetail() {
  >
  Back to recipes
  </Link>
- <div className="mt-6 rounded border border-white/10 bg-mise-900 p-6">
+ <div className="mt-6 rounded border border-theme bg-mise-900 p-6">
  <h1 className="text-2xl font-semibold tracking-tight text-mise-300">Recipe not found</h1>
  <p className="mt-2 text-mise-500">The recipe you requested does not exist.</p>
  </div>
@@ -146,7 +146,7 @@ function RecipeDetail() {
  Back to recipes
  </Link>
 
- <div className={`relative mt-6 h-56 w-full overflow-hidden rounded border border-white/10 bg-gradient-to-br md:h-72 ${headerTheme}`} aria-hidden="true">
+ <div className={`relative mt-6 h-56 w-full overflow-hidden rounded border border-theme bg-gradient-to-br md:h-72 ${headerTheme}`} aria-hidden="true">
  <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_25%,rgba(255,255,255,0.1),transparent_40%),radial-gradient(circle_at_80%_75%,rgba(255,255,255,0.08),transparent_45%)]" />
  </div>
 
@@ -156,7 +156,7 @@ function RecipeDetail() {
  {recipe.tags.map((tag) => (
  <span
  key={`${recipe.id}-${tag}`}
- className="rounded border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/60"
+ className="rounded border border-theme bg-mise-800/40 px-2.5 py-1 text-xs font-medium text-mise-500"
  >
  {tag}
  </span>
@@ -165,7 +165,7 @@ function RecipeDetail() {
  <StarRating />
  </header>
 
- <div className="mt-8 inline-flex items-center gap-4 rounded border border-white/10 bg-mise-900 px-4 py-3">
+ <div className="mt-8 inline-flex items-center gap-4 rounded border border-theme bg-mise-900 px-4 py-3">
  <div
  className="flex items-center gap-4"
  role="radiogroup"
@@ -201,7 +201,7 @@ function RecipeDetail() {
  ))}
  </div>
 
- <div className="flex items-center gap-2 border-l border-white/10 pl-4">
+ <div className="flex items-center gap-2 border-l border-theme pl-4">
  <button
  type="button"
  onClick={() => setServings((current) => Math.max(1, current - 1))}
@@ -226,13 +226,13 @@ function RecipeDetail() {
  </div>
 
  <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_1fr]">
- <section className="rounded border border-white/10 bg-mise-900 p-4">
+ <section className="rounded border border-theme bg-mise-900 p-4">
  <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
  <ul className="mt-4 space-y-2">
  {scaledIngredients.map((ingredient) => (
  <li
  key={ingredient.id}
- className="flex items-baseline justify-between gap-4 rounded border border-white/10 bg-mise-950/50 px-3 py-2"
+ className="flex items-baseline justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
  >
  <span className="text-mise-400">{ingredient.name}</span>
  <span className="text-sm font-medium text-mise-300">
@@ -243,24 +243,24 @@ function RecipeDetail() {
  </ul>
  </section>
 
- <section className="rounded border border-white/10 bg-mise-900 p-4">
+ <section className="rounded border border-theme bg-mise-900 p-4">
  <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">
  Macros <span className="normal-case tracking-normal">— {mode === 'per-serving' ? 'per serving' : `for ${servings} serving${servings !== 1 ? 's' : ''}`}</span>
  </h2>
  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
- <div className="rounded border border-white/10 bg-mise-950/50 p-3">
+ <div className="rounded border border-theme bg-mise-950/50 p-3">
  <p className="text-xs text-mise-500">Calories</p>
  <p className="mt-1 text-lg font-semibold text-mise-300">{scaledMacros.calories}</p>
  </div>
- <div className="rounded border border-white/10 bg-mise-950/50 p-3">
+ <div className="rounded border border-theme bg-mise-950/50 p-3">
  <p className="text-xs text-mise-500">Protein</p>
  <p className="mt-1 text-lg font-semibold text-mise-300">{scaledMacros.protein}g</p>
  </div>
- <div className="rounded border border-white/10 bg-mise-950/50 p-3">
+ <div className="rounded border border-theme bg-mise-950/50 p-3">
  <p className="text-xs text-mise-500">Carbs</p>
  <p className="mt-1 text-lg font-semibold text-mise-300">{scaledMacros.carbs}g</p>
  </div>
- <div className="rounded border border-white/10 bg-mise-950/50 p-3">
+ <div className="rounded border border-theme bg-mise-950/50 p-3">
  <p className="text-xs text-mise-500">Fat</p>
  <p className="mt-1 text-lg font-semibold text-mise-300">{scaledMacros.fat}g</p>
  </div>
@@ -268,13 +268,13 @@ function RecipeDetail() {
  </section>
  </div>
 
- <section className="mt-6 rounded border border-white/10 bg-mise-900 p-4">
+ <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
  <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Steps</h2>
  <ol className="mt-4 space-y-3">
  {recipe.steps.map((step, index) => (
  <li
  key={step.id}
- className="rounded border border-white/10 bg-mise-950/50 px-4 py-3"
+ className="rounded border border-theme bg-mise-950/50 px-4 py-3"
  >
  <p className="text-sm font-medium text-mise-500">Step {index + 1}</p>
  <div className="mt-1 flex items-center gap-2">

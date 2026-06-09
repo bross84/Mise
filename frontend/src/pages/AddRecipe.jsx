@@ -182,7 +182,7 @@ function AddRecipe() {
  if (stage === 'input') {
  return (
  <section className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-3xl items-center">
- <div className="w-full rounded border border-white/10 bg-mise-900/70 p-6 sm:p-8">
+ <div className="w-full rounded border border-theme bg-mise-900/70 p-6 sm:p-8">
  <header>
  <h1 className="font-display text-3xl font-semibold text-mise-300">Add Recipe</h1>
  <p className="mt-2 text-sm text-mise-500">Paste recipe content or provide a source URL, then parse into an editable draft.</p>
@@ -345,7 +345,7 @@ function AddRecipe() {
  </div>
  </div>
 
- <section className="rounded border border-white/10 bg-mise-900 p-4">
+ <section className="rounded border border-theme bg-mise-900 p-4">
  <div className="mb-4 flex items-center justify-between">
  <h2 className="text-lg font-semibold text-mise-300">Ingredients</h2>
  <button
@@ -369,7 +369,7 @@ function AddRecipe() {
  return (
  <div
  key={ingredient.id}
- className="grid gap-2 rounded border border-white/10 bg-mise-950/50 p-4 md:grid-cols-12"
+ className="grid gap-2 rounded border border-theme bg-mise-950/50 p-4 md:grid-cols-12"
  >
  <label htmlFor={`ingredient-name-${ingredient.id}`} className="sr-only">
  Ingredient {index + 1} name
@@ -449,7 +449,7 @@ function AddRecipe() {
  </div>
  </section>
 
- <section className="rounded border border-white/10 bg-mise-900 p-4">
+ <section className="rounded border border-theme bg-mise-900 p-4">
  <div className="mb-4 flex items-center justify-between">
  <h2 className="text-lg font-semibold text-mise-300">Steps</h2>
  <button
@@ -468,7 +468,7 @@ function AddRecipe() {
 
  <div className="space-y-3">
  {recipeDraft.steps.map((step, index) => (
- <div key={step.id} className="rounded border border-white/10 bg-mise-950/50 p-4">
+ <div key={step.id} className="rounded border border-theme bg-mise-950/50 p-4">
  <div className="grid gap-2 md:grid-cols-12">
  <label htmlFor={`step-title-${step.id}`} className="sr-only">
  Step {index + 1} title

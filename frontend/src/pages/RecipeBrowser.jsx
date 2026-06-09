@@ -135,14 +135,14 @@ function RecipeBrowser() {
  {recipe.tags.map((tag) => (
  <span
  key={`${recipe.id}-${tag}`}
- className="rounded border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/60"
+ className="rounded border border-theme bg-mise-800/40 px-2.5 py-1 text-xs font-medium text-mise-500"
  >
  {tag}
  </span>
  ))}
  </div>
 
- <div className="mt-auto grid grid-cols-4 gap-2 border-t border-white/10 pt-4 text-xs">
+ <div className="mt-auto grid grid-cols-4 gap-2 border-t border-theme pt-4 text-xs">
  <div>
  <p className="text-mise-500">Calories</p>
  <p className="mt-1 font-semibold text-mise-300">{recipe.macros.calories}</p>
@@ -161,7 +161,7 @@ function RecipeBrowser() {
  </div>
  </div>
 
- <div className="mt-4 flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+ <div className="mt-4 flex items-center justify-end gap-2 border-t border-theme pt-4">
  <button
  type="button"
  onClick={(event) => {

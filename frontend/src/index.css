@@ -2,9 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Color tokens (RGB channels for Tailwind opacity modifier support) ── */
+:root {
+  /* Light mode */
+  --mise-950: 249 247 244;
+  --mise-900: 255 255 255;
+  --mise-800: 232 228 223;
+  --mise-700: 51 103 59;
+  --mise-600: 154 109 56;
+  --mise-500: 107 107 107;
+  --mise-400: 74 74 74;
+  --mise-300: 26 26 26;
+  --mise-200: 0 0 0;
+  --ember: 204 63 12;
+}
+
+.dark {
+  --mise-950: 25 25 25;
+  --mise-900: 34 34 34;
+  --mise-800: 38 51 40;
+  --mise-500: 154 141 137;
+  --mise-400: 184 170 166;
+  --mise-300: 216 203 199;
+  --mise-200: 232 221 217;
+}
+
 @layer base {
   body {
-    background-color: #191919;
-    color: #D8CBC7;
+    background-color: rgb(var(--mise-950));
+    color: rgb(var(--mise-300));
+  }
+}
+
+/* ── Theme-aware border ── */
+/* Replaces border-white/10 (dark-only) with a class that works in both modes */
+@layer utilities {
+  .border-theme {
+    border-color: rgba(0, 0, 0, 0.1);
+  }
+  .dark .border-theme {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .divide-theme > * + * {
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+  .dark .divide-theme > * + * {
+    border-color: rgba(255, 255, 255, 0.08);
   }
 }
