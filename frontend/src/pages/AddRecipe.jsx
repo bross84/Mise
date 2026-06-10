@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createRecipe, getIngredients } from '../api/client.js'
+import { createRecipe, getIngredients, searchIngredients } from '../api/client.js'
 
 const inputClassName =
  'w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
@@ -20,7 +20,93 @@ function createIngredient(initialValues = {}) {
  name: initialValues.name ?? '',
  amount: initialValues.amount ?? '',
  unit: initialValues.unit ?? '',
+ matchedSource: initialValues.matchedSource ?? null,
  }
+}
+
+function IngredientNameInput({ value, onChange, onSelect }) {
+  const [results, setResults] = useState([])
+  const [open, setOpen] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const timerRef = useRef(null)
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleChange = (e) => {
+    const q = e.target.value
+    onChange(q)
+    clearTimeout(timerRef.current)
+    if (q.trim().length < 2) {
+      setResults([])
+      setOpen(false)
+      return
+    }
+    timerRef.current = setTimeout(() => {
+      setSearching(true)
+      searchIngredients(q)
+        .then((data) => {
+          setResults(data?.results ?? [])
+          setOpen(true)
+        })
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false))
+    }, 400)
+  }
+
+  const handleSelect = (result) => {
+    onSelect(result)
+    setOpen(false)
+    setResults([])
+  }
+
+  return (
+    <div ref={containerRef} className="relative md:col-span-4">
+      <input
+        type="text"
+        value={value}
+        onChange={handleChange}
+        onFocus={() => results.length > 0 && setOpen(true)}
+        onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+        placeholder="Ingredient name"
+        autoComplete="off"
+        className="w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+      />
+      {searching && (
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-mise-500">…</span>
+      )}
+      {open && results.length > 0 && (
+        <ul className="absolute z-20 mt-1 w-full rounded border border-mise-800 bg-mise-900 shadow-lg">
+          {results.map((result, i) => (
+            <li key={i} className="border-b border-mise-800 last:border-none">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelect(result)}
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-mise-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                <span className="flex-1 text-sm text-mise-300">{result.name}</span>
+                <span className="shrink-0 text-xs text-mise-500">
+                  {result.calories} kcal &middot; {result.protein}p &middot; {result.carbs}c &middot; {result.fat}f
+                </span>
+                <span className="rounded border border-mise-700 bg-mise-800/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-mise-400">
+                  {result.source === 'usda' ? 'USDA' : 'OFF'}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 function createStep(initialValues = {}) {
@@ -92,7 +178,9 @@ function AddRecipe() {
  setRecipeDraft((currentDraft) => ({
  ...currentDraft,
  ingredients: currentDraft.ingredients.map((ingredient) =>
- ingredient.id === ingredientId ? { ...ingredient, [field]: value } : ingredient,
+ ingredient.id === ingredientId
+   ? { ...ingredient, [field]: value, ...(field === 'name' ? { matchedSource: null } : {}) }
+   : ingredient,
  ),
  }))
  }
@@ -372,7 +460,7 @@ function AddRecipe() {
 
  <div className="space-y-3">
  {recipeDraft.ingredients.map((ingredient, index) => {
- const matched = isIngredientMatched(ingredient.name)
+ const matched = ingredient.matchedSource != null || isIngredientMatched(ingredient.name)
 
  return (
  <div
@@ -382,13 +470,19 @@ function AddRecipe() {
  <label htmlFor={`ingredient-name-${ingredient.id}`} className="sr-only">
  Ingredient {index + 1} name
  </label>
- <input
- id={`ingredient-name-${ingredient.id}`}
- type="text"
- value={ingredient.name}
- onChange={(event) => updateIngredient(ingredient.id, 'name', event.target.value)}
- placeholder="Ingredient name"
- className="rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember md:col-span-4"
+ <IngredientNameInput
+   value={ingredient.name}
+   onChange={(value) => updateIngredient(ingredient.id, 'name', value)}
+   onSelect={(result) => {
+     setRecipeDraft((currentDraft) => ({
+       ...currentDraft,
+       ingredients: currentDraft.ingredients.map((ing) =>
+         ing.id === ingredient.id
+           ? { ...ing, name: result.name, matchedSource: result.source }
+           : ing,
+       ),
+     }))
+   }}
  />
  <label htmlFor={`ingredient-amount-${ingredient.id}`} className="sr-only">
  Ingredient {index + 1} amount
@@ -422,7 +516,9 @@ function AddRecipe() {
  : 'border-rose-500/40 bg-rose-500/15 text-rose-300',
  ].join(' ')}
  >
- {matched ? '🟢 Matched' : '🔴 Unmatched'}
+ {matched
+   ? `🟢 ${ingredient.matchedSource === 'usda' ? 'USDA' : ingredient.matchedSource === 'openfoodfacts' ? 'OFF' : 'Matched'}`
+   : '🔴 Unmatched'}
  </span>
  {!matched && (
  <button

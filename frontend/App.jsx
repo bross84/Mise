@@ -70,7 +70,10 @@ function App() {
     <div className="min-h-screen bg-mise-950 text-mise-300">
       <header className="fixed left-0 right-0 top-0 z-40 border-b border-mise-800 bg-mise-950/95 px-4 py-3 backdrop-blur md:hidden">
         <div className="flex items-center justify-between">
-          <p className="font-display text-2xl font-bold text-mise-300">Mise</p>
+          <div>
+            <p className="font-display text-2xl font-bold text-mise-300">Mise en Place</p>
+            <p className="font-display text-xs italic text-mise-500">me-zohn plahs</p>
+          </div>
           <div className="flex items-center gap-2">
             <ThemeToggle compact />
             <button
@@ -104,7 +107,10 @@ function App() {
         ].join(' ')}
       >
         <div className="px-3">
-          <p className="font-display text-3xl font-bold text-mise-300">Mise</p>
+          <div>
+            <p className="font-display text-3xl font-bold text-mise-300">Mise en Place</p>
+            <p className="font-display text-xs italic text-mise-500">me-zohn plahs</p>
+          </div>
         </div>
 
         <nav id="main-navigation" aria-label="Main navigation" className="mt-8 space-y-1">

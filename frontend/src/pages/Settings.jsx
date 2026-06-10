@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { saveOpenRouterKey } from '../api/client.js'
 
 const sectionClassName = 'rounded border border-theme bg-mise-900 p-4'
 const labelClassName = 'mb-2 block text-sm font-medium text-mise-400'
@@ -7,7 +8,27 @@ const inputClassName =
 
 function Settings() {
   const [isApiKeyVisible, setIsApiKeyVisible] = useState(false)
+  const [openRouterKey, setOpenRouterKey] = useState('')
+  const [apiKeyStatus, setApiKeyStatus] = useState({ type: '', message: '' })
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false)
   const [units, setUnits] = useState('metric')
+
+  const handleSaveApiKey = async () => {
+    setApiKeyStatus({ type: '', message: '' })
+    setIsSavingApiKey(true)
+
+    try {
+      await saveOpenRouterKey(openRouterKey)
+      setApiKeyStatus({ type: 'success', message: 'OpenRouter API key saved.' })
+    } catch (error) {
+      setApiKeyStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Failed to save OpenRouter API key.',
+      })
+    } finally {
+      setIsSavingApiKey(false)
+    }
+  }
 
   return (
     <section className="mx-auto w-full max-w-4xl">
@@ -31,6 +52,8 @@ function Settings() {
               <input
                 id="openrouter-api-key"
                 type={isApiKeyVisible ? 'text' : 'password'}
+                value={openRouterKey}
+                onChange={(event) => setOpenRouterKey(event.target.value)}
                 placeholder="sk-or-v1-..."
                 className={inputClassName}
                 autoComplete="off"
@@ -44,6 +67,27 @@ function Settings() {
               >
                 {isApiKeyVisible ? 'Hide' : 'Show'}
               </button>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSaveApiKey}
+                disabled={isSavingApiKey}
+                className="rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                {isSavingApiKey ? 'Saving...' : 'Save Key'}
+              </button>
+              {apiKeyStatus.message && (
+                <p
+                  className={[
+                    'text-xs',
+                    apiKeyStatus.type === 'success' ? 'text-emerald-300' : 'text-rose-300',
+                  ].join(' ')}
+                  role="status"
+                >
+                  {apiKeyStatus.message}
+                </p>
+              )}
             </div>
           </div>
         </section>

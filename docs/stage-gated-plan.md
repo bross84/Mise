@@ -8,6 +8,8 @@
 - Frontend recipe and ingredient pages migrated to the FastAPI client, with API env files added and mock imports removed from active pages.
 - Recipe description field removed from Add Recipe form/save payload and from mock recipe objects; backend recipe schema/model already had no description field.
 - Recipe Detail now includes a top-right destructive Delete Recipe button (Trash2 icon) with confirm dialog, delete API call, redirect, and failure alert.
+- OpenRouter integration added via backend AI service and `/api/ai/test`, with dotenv loading and Settings key persistence endpoint/UI wiring.
+- AI service model target updated to `anthropic/claude-sonnet-4-6`.
 
 ## 2026-06-08
 

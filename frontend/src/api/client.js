@@ -66,6 +66,10 @@ export function getIngredients() {
   return request('/ingredients')
 }
 
+export function searchIngredients(q) {
+  return request(`/ingredients/search?q=${encodeURIComponent(q)}`)
+}
+
 export function createIngredient(data) {
   return request('/ingredients', {
     method: 'POST',
@@ -83,5 +87,12 @@ export function updateIngredient(id, data) {
 export function deleteIngredient(id) {
   return request(`/ingredients/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+  })
+}
+
+export function saveOpenRouterKey(key) {
+  return request('/settings/openrouter-key', {
+    method: 'POST',
+    body: JSON.stringify({ key }),
   })
 }

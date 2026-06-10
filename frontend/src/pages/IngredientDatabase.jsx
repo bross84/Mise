@@ -1,109 +1,144 @@
-import { useEffect, useMemo, useState } from 'react'
-import { createIngredient, deleteIngredient, getIngredients } from '../api/client.js'
-
-const inputClassName =
- 'w-full rounded border border-mise-800 bg-mise-900 px-4 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
-
-const primaryButtonClassName =
- 'inline-flex w-fit bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createIngredient, deleteIngredient, getIngredients, searchIngredients } from '../api/client.js'
 
 const secondaryButtonClassName =
- ' border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+  'rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
 const destructiveButtonClassName =
- ' px-3 py-1.5 text-xs font-medium text-rose-400 transition hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+  'px-3 py-1.5 text-xs font-medium text-rose-400 transition hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+
+const fieldCls =
+  'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+
+
 
 function IngredientDatabase() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [name, setName] = useState('')
-  const [calories, setCalories] = useState('')
-  const [protein, setProtein] = useState('')
-  const [carbs, setCarbs] = useState('')
-  const [fat, setFat] = useState('')
+  const [query, setQuery] = useState('')
+  const [apiResults, setApiResults] = useState([])
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [searching, setSearching] = useState(false)
+
+  // Inline add form state; null = hidden
+  const [draft, setDraft] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [actionError, setActionError] = useState('')
+
   const [ingredients, setIngredients] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [actionError, setActionError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
+  const timerRef = useRef(null)
+  const containerRef = useRef(null)
+
+  // Close dropdown on outside click
   useEffect(() => {
-    let active = true
-
-    async function loadIngredients() {
-      try {
-        setLoading(true)
-        setError('')
-        const data = await getIngredients()
-
-        if (!active) {
-          return
-        }
-
-        setIngredients(Array.isArray(data) ? data : [])
-      } catch (requestError) {
-        if (!active) {
-          return
-        }
-
-        setError(requestError instanceof Error ? requestError.message : 'Failed to load ingredients.')
-        setIngredients([])
-      } finally {
-        if (active) {
-          setLoading(false)
-        }
+    function handleOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setDropdownOpen(false)
       }
     }
-
-    void loadIngredients()
-
-    return () => {
-      active = false
-    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
   }, [])
 
-  const filteredIngredients = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-
-    if (!query) {
-      return ingredients
+  // Initial load
+  useEffect(() => {
+    let active = true
+    async function load() {
+      try {
+        setLoading(true)
+        setLoadError('')
+        const data = await getIngredients()
+        if (active) setIngredients(Array.isArray(data) ? data : [])
+      } catch (err) {
+        if (active) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load ingredients.')
+          setIngredients([])
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
     }
-
-    return ingredients.filter((ingredient) => ingredient.name.toLowerCase().includes(query))
-  }, [ingredients, searchQuery])
-
-  const resetForm = () => {
-    setName('')
-    setCalories('')
-    setProtein('')
-    setCarbs('')
-    setFat('')
-    setShowAddForm(false)
-  }
+    void load()
+    return () => { active = false }
+  }, [])
 
   const reloadIngredients = async () => {
     const data = await getIngredients()
     setIngredients(Array.isArray(data) ? data : [])
   }
 
-  const handleAddIngredient = async (event) => {
-    event.preventDefault()
+  // Local table filter — runs against the saved list, not API results
+  const filteredIngredients = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return ingredients
+    return ingredients.filter((i) => i.name.toLowerCase().includes(q))
+  }, [ingredients, query])
+
+  const handleQueryChange = (e) => {
+    const q = e.target.value
+    setQuery(q)
+    clearTimeout(timerRef.current)
+
+    if (q.trim().length < 2) {
+      setApiResults([])
+      setDropdownOpen(false)
+      return
+    }
+
+    timerRef.current = setTimeout(() => {
+      setSearching(true)
+      searchIngredients(q)
+        .then((data) => {
+          setApiResults(data?.results ?? [])
+          setDropdownOpen(true)
+        })
+        .catch(() => setApiResults([]))
+        .finally(() => setSearching(false))
+    }, 400)
+  }
+
+  const handleSelectResult = (result) => {
+    setDropdownOpen(false)
+    setQuery(result.name)
+    setDraft({
+      name: result.name,
+      calories: String(result.calories),
+      protein: String(result.protein),
+      carbs: String(result.carbs),
+      fat: String(result.fat),
+    })
+  }
+
+  const handleAddManually = () => {
+    setDropdownOpen(false)
+    setDraft({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '' })
+  }
+
+  const handleClearDraft = () => {
+    setDraft(null)
+    setQuery('')
+    setApiResults([])
+    setActionError('')
+  }
+
+  const handleSave = async (e) => {
+    e.preventDefault()
     setActionError('')
     setSubmitting(true)
-
     try {
       await createIngredient({
-        name: name.trim(),
-        calories: Number(calories),
-        protein: Number(protein),
-        carbs: Number(carbs),
-        fat: Number(fat),
+        name: draft.name.trim(),
+        calories: Number(draft.calories) || 0,
+        protein: Number(draft.protein) || 0,
+        carbs: Number(draft.carbs) || 0,
+        fat: Number(draft.fat) || 0,
         unit: 'per 100g',
       })
-      resetForm()
+      handleClearDraft()
       await reloadIngredients()
-    } catch (requestError) {
-      setActionError(requestError instanceof Error ? requestError.message : 'Failed to add ingredient.')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to save ingredient.')
     } finally {
       setSubmitting(false)
     }
@@ -111,12 +146,11 @@ function IngredientDatabase() {
 
   const handleDeleteIngredient = async (ingredientId) => {
     setActionError('')
-
     try {
       await deleteIngredient(ingredientId)
       await reloadIngredients()
-    } catch (requestError) {
-      setActionError(requestError instanceof Error ? requestError.message : 'Failed to delete ingredient.')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to delete ingredient.')
     }
   }
 
@@ -124,117 +158,170 @@ function IngredientDatabase() {
     <section className="mx-auto w-full max-w-7xl">
       <header>
         <h1 className="font-display text-3xl font-semibold text-mise-300">Ingredient Database</h1>
-        <p className="mt-2 text-sm text-mise-500">Browse base ingredient macros and add new entries.</p>
+        <p className="mt-2 text-sm text-mise-500">Search USDA or Open Food Facts (OFF) to add ingredients, or enter one manually.</p>
       </header>
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          onClick={() => setShowAddForm((current) => !current)}
-          className={showAddForm ? secondaryButtonClassName : primaryButtonClassName}
-        >
-          {showAddForm ? 'Cancel' : 'Add Ingredient'}
-        </button>
+      {/* Persistent search / add bar */}
+      <div ref={containerRef} className="relative mt-6">
+        <label htmlFor="ingredient-add-search" className="sr-only">Search or add ingredient</label>
+        <input
+          id="ingredient-add-search"
+          type="text"
+          value={query}
+          onChange={handleQueryChange}
+          onFocus={() => apiResults.length > 0 && setDropdownOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              if (!dropdownOpen && query.trim()) handleAddManually()
+            }
+            if (e.key === 'Escape') setDropdownOpen(false)
+          }}
+          placeholder="Search or add ingredient…"
+          autoComplete="off"
+          className="w-full rounded border border-mise-800 bg-mise-900 px-4 py-3 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+        />
+        {searching && (
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-mise-500">Searching…</span>
+        )}
 
-        <div className="w-full sm:max-w-md">
-          <label htmlFor="ingredient-search" className="sr-only">
-            Search ingredients
-          </label>
-          <input
-            id="ingredient-search"
-            type="text"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search ingredients by name..."
-            className={inputClassName}
-          />
-        </div>
+        {/* API results dropdown */}
+        {dropdownOpen && apiResults.length > 0 && (
+          <ul className="absolute z-20 mt-1 w-full rounded border border-mise-800 bg-mise-900 shadow-xl">
+            {apiResults.map((result, i) => (
+              <li key={i} className="border-b border-mise-800 last:border-none">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleSelectResult(result)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-mise-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                >
+                  <span className="flex-1 text-sm text-mise-300">{result.name}</span>
+                  <span className="shrink-0 text-xs text-mise-500">
+                    {result.calories} kcal &middot; {result.protein}g P &middot; {result.carbs}g C &middot; {result.fat}g F
+                  </span>
+                </button>
+              </li>
+            ))}
+            {query.trim().length >= 2 && (
+              <li>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleAddManually}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-mise-500 transition hover:bg-mise-800/60 focus-visible:outline-none"
+                >
+                  <span className="text-mise-400">Add &ldquo;{query.trim()}&rdquo; manually</span>
+                </button>
+              </li>
+            )}
+          </ul>
+        )}
       </div>
 
-      {(error || actionError) && (
-        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-          {actionError || error}
-        </div>
+      {/* Inline pre-fill form */}
+      {draft !== null && (
+        <form
+          onSubmit={handleSave}
+          className="mt-3 rounded border border-mise-700/50 bg-mise-900 p-4"
+        >
+          <p className="mb-3 text-xs font-medium uppercase tracking-widest text-mise-500">New Ingredient</p>
+          {actionError && (
+            <p className="mb-3 text-xs text-rose-400">{actionError}</p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-5">
+            <div className="sm:col-span-1">
+              <label htmlFor="draft-name" className="mb-1 block text-xs text-mise-500">Name</label>
+              <input
+                id="draft-name"
+                type="text"
+                value={draft.name}
+                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                placeholder="Name"
+                className={fieldCls}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="draft-calories" className="mb-1 block text-xs text-mise-500">Calories</label>
+              <input
+                id="draft-calories"
+                type="number"
+                step="any"
+                min="0"
+                value={draft.calories}
+                onChange={(e) => setDraft((d) => ({ ...d, calories: e.target.value }))}
+                placeholder="kcal"
+                className={fieldCls}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="draft-protein" className="mb-1 block text-xs text-mise-500">Protein (g)</label>
+              <input
+                id="draft-protein"
+                type="number"
+                step="any"
+                min="0"
+                value={draft.protein}
+                onChange={(e) => setDraft((d) => ({ ...d, protein: e.target.value }))}
+                placeholder="g"
+                className={fieldCls}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="draft-carbs" className="mb-1 block text-xs text-mise-500">Carbs (g)</label>
+              <input
+                id="draft-carbs"
+                type="number"
+                step="any"
+                min="0"
+                value={draft.carbs}
+                onChange={(e) => setDraft((d) => ({ ...d, carbs: e.target.value }))}
+                placeholder="g"
+                className={fieldCls}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="draft-fat" className="mb-1 block text-xs text-mise-500">Fat (g)</label>
+              <input
+                id="draft-fat"
+                type="number"
+                step="any"
+                min="0"
+                value={draft.fat}
+                onChange={(e) => setDraft((d) => ({ ...d, fat: e.target.value }))}
+                placeholder="g"
+                className={fieldCls}
+                required
+              />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              {submitting ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={handleClearDraft}
+              className="rounded border border-mise-800 px-3 py-2 text-sm text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Clear
+            </button>
+          </div>
+        </form>
       )}
 
-      {showAddForm && (
-        <form onSubmit={handleAddIngredient} className="mt-4 rounded border border-theme bg-mise-900 p-4">
-          <h2 className="text-lg font-semibold text-mise-300">Add Ingredient</h2>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <label htmlFor="new-ingredient-name" className="sr-only">
-              Ingredient name
-            </label>
-            <input
-              id="new-ingredient-name"
-              type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Name"
-              className="rounded border border-mise-800 bg-mise-950 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              required
-            />
-            <label htmlFor="new-ingredient-calories" className="sr-only">
-              Ingredient calories
-            </label>
-            <input
-              id="new-ingredient-calories"
-              type="number"
-              step="any"
-              value={calories}
-              onChange={(event) => setCalories(event.target.value)}
-              placeholder="Calories"
-              className="rounded border border-mise-800 bg-mise-950 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              required
-            />
-            <label htmlFor="new-ingredient-protein" className="sr-only">
-              Ingredient protein
-            </label>
-            <input
-              id="new-ingredient-protein"
-              type="number"
-              step="any"
-              value={protein}
-              onChange={(event) => setProtein(event.target.value)}
-              placeholder="Protein"
-              className="rounded border border-mise-800 bg-mise-950 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              required
-            />
-            <label htmlFor="new-ingredient-carbs" className="sr-only">
-              Ingredient carbs
-            </label>
-            <input
-              id="new-ingredient-carbs"
-              type="number"
-              step="any"
-              value={carbs}
-              onChange={(event) => setCarbs(event.target.value)}
-              placeholder="Carbs"
-              className="rounded border border-mise-800 bg-mise-950 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              required
-            />
-            <label htmlFor="new-ingredient-fat" className="sr-only">
-              Ingredient fat
-            </label>
-            <input
-              id="new-ingredient-fat"
-              type="number"
-              step="any"
-              value={fat}
-              onChange={(event) => setFat(event.target.value)}
-              placeholder="Fat"
-              className="rounded border border-mise-800 bg-mise-950 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-4 bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-          >
-            {submitting ? 'Saving...' : 'Save Ingredient'}
-          </button>
-        </form>
+      {loadError && (
+        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          {loadError}
+        </div>
       )}
 
       <div className="mt-6 overflow-x-auto rounded border border-theme bg-mise-900">
@@ -253,14 +340,12 @@ function IngredientDatabase() {
           <tbody className="divide-y divide-mise-800 text-mise-300">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-mise-500">
-                  Loading ingredients...
-                </td>
+                <td colSpan={7} className="px-4 py-8 text-center text-mise-500">Loading ingredients…</td>
               </tr>
             ) : filteredIngredients.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-mise-500">
-                  No ingredients found yet. Try a different name in search.
+                  {query.trim() ? `No saved ingredients match "${query}".` : 'No ingredients yet.'}
                 </td>
               </tr>
             ) : (
@@ -274,9 +359,7 @@ function IngredientDatabase() {
                   <td className="whitespace-nowrap px-4 py-3 text-mise-400">{ingredient.unit}</td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button type="button" className={secondaryButtonClassName}>
-                        Edit
-                      </button>
+                      <button type="button" className={secondaryButtonClassName}>Edit</button>
                       <button
                         type="button"
                         onClick={() => handleDeleteIngredient(ingredient.id)}

@@ -7,6 +7,8 @@
 - Migrated frontend recipe and ingredient pages to the FastAPI client, added API env files, and removed mock data imports from the active pages.
 - Removed recipe description field usage from Add Recipe flow and mock recipe data; confirmed backend schema/model already have no description field.
 - Added a destructive Delete Recipe action in Recipe Detail with confirmation, API delete call, redirect to recipe list, and failure alert.
+- Implemented OpenRouter integration with a new async AI service, `/api/ai/test` endpoint, dotenv loading in backend startup, and a Settings endpoint/UI flow to persist and save OpenRouter API keys.
+- Updated AI service model target from `anthropic/claude-3.5-sonnet` to `anthropic/claude-sonnet-4-6`.
 
 ## 2026-06-08
 
