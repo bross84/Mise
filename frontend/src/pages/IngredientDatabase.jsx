@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createIngredient, deleteIngredient, getIngredients, searchIngredients } from '../api/client.js'
+import { createIngredient, deleteIngredient, getIngredients, searchIngredients, updateIngredient } from '../api/client.js'
 
 const secondaryButtonClassName =
   'rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
@@ -58,6 +58,11 @@ function IngredientDatabase() {
   const [draft, setDraft] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState('')
+
+  // Inline edit state
+  const [editingId, setEditingId] = useState(null)
+  const [editDraft, setEditDraft] = useState({})
+  const [editSaving, setEditSaving] = useState(false)
 
   const [ingredients, setIngredients] = useState([])
   const [loading, setLoading] = useState(true)
@@ -198,6 +203,44 @@ function IngredientDatabase() {
       setActionError(err instanceof Error ? err.message : 'Failed to save ingredient.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleStartEdit = (ingredient) => {
+    setEditingId(ingredient.id)
+    setEditDraft({
+      name: ingredient.name,
+      calories: String(ingredient.calories),
+      protein: String(ingredient.protein),
+      carbs: String(ingredient.carbs),
+      fat: String(ingredient.fat),
+    })
+    setActionError('')
+  }
+
+  const handleCancelEdit = () => {
+    setEditingId(null)
+    setEditDraft({})
+  }
+
+  const handleSaveEdit = async () => {
+    setEditSaving(true)
+    setActionError('')
+    try {
+      await updateIngredient(editingId, {
+        name: editDraft.name.trim(),
+        calories: Number(editDraft.calories) || 0,
+        protein: Number(editDraft.protein) || 0,
+        carbs: Number(editDraft.carbs) || 0,
+        fat: Number(editDraft.fat) || 0,
+      })
+      setEditingId(null)
+      setEditDraft({})
+      await reloadIngredients()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update ingredient.')
+    } finally {
+      setEditSaving(false)
     }
   }
 
@@ -389,6 +432,7 @@ function IngredientDatabase() {
         <table className="min-w-full divide-y divide-mise-800 text-left text-sm">
           <thead className="bg-mise-950/60 text-xs uppercase tracking-wide text-mise-500">
             <tr>
+              <th scope="col" className="px-4 py-3 font-medium">ID</th>
               <th scope="col" className="px-4 py-3 font-medium">Name</th>
               <th scope="col" className="px-4 py-3 font-medium">Calories</th>
               <th scope="col" className="px-4 py-3 font-medium">Protein</th>
@@ -401,36 +445,117 @@ function IngredientDatabase() {
           <tbody className="divide-y divide-mise-800 text-mise-300">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-mise-500">Loading ingredients…</td>
+                <td colSpan={8} className="px-4 py-8 text-center text-mise-500">Loading ingredients…</td>
               </tr>
             ) : filteredIngredients.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-mise-500">
+                <td colSpan={8} className="px-4 py-8 text-center text-mise-500">
                   {query.trim() ? `No saved ingredients match "${query}".` : 'No ingredients yet.'}
                 </td>
               </tr>
             ) : (
               filteredIngredients.map((ingredient) => (
-                <tr key={ingredient.id} className="hover:bg-mise-800/30">
-                  <td className="whitespace-nowrap px-4 py-3 font-medium text-mise-300">{ingredient.name}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{ingredient.calories}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{ingredient.protein}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{ingredient.carbs}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{ingredient.fat}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-mise-400">{ingredient.unit}</td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button type="button" className={secondaryButtonClassName}>Edit</button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteIngredient(ingredient.id)}
-                        className={destructiveButtonClassName}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                ingredient.id === editingId ? (
+                  <tr key={ingredient.id} className="bg-mise-800/20">
+                    <td className="whitespace-nowrap px-4 py-2 text-mise-500 text-xs">{ingredient.id}</td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="text"
+                        value={editDraft.name}
+                        onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                        className={fieldCls}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={editDraft.calories}
+                        onChange={(e) => setEditDraft((d) => ({ ...d, calories: e.target.value }))}
+                        className={fieldCls}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={editDraft.protein}
+                        onChange={(e) => setEditDraft((d) => ({ ...d, protein: e.target.value }))}
+                        className={fieldCls}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={editDraft.carbs}
+                        onChange={(e) => setEditDraft((d) => ({ ...d, carbs: e.target.value }))}
+                        className={fieldCls}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={editDraft.fat}
+                        onChange={(e) => setEditDraft((d) => ({ ...d, fat: e.target.value }))}
+                        className={fieldCls}
+                      />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2 text-mise-400">{ingredient.unit}</td>
+                    <td className="whitespace-nowrap px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveEdit}
+                          disabled={editSaving}
+                          className="rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                        >
+                          {editSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelEdit}
+                          className={secondaryButtonClassName}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={ingredient.id} className="hover:bg-mise-800/30">
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-mise-500">{ingredient.id}</td>
+                    <td className="whitespace-nowrap px-4 py-3 font-medium text-mise-300">{ingredient.name}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{ingredient.calories}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{ingredient.protein}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{ingredient.carbs}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{ingredient.fat}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-mise-400">{ingredient.unit}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(ingredient)}
+                          className={secondaryButtonClassName}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteIngredient(ingredient.id)}
+                          className={destructiveButtonClassName}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
               ))
             )}
           </tbody>

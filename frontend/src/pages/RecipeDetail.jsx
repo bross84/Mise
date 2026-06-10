@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Pencil, Share2, Star, Trash2, X } from 'lucide-react'
-import { deleteRecipe, getRecipe, updateRecipe } from '../api/client.js'
+import { deleteRecipe, getIngredients, getRecipe, updateRecipe } from '../api/client.js'
 
 const tagHeaderTheme = {
   beef: 'from-rose-900/60 via-slate-900 to-slate-950 bg-rose-900/30',
@@ -151,6 +151,8 @@ function RecipeDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  const [ingredientMap, setIngredientMap] = useState({})
+
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(null)
   const [tagInput, setTagInput] = useState('')
@@ -166,12 +168,17 @@ function RecipeDetail() {
       try {
         setLoading(true)
         setError('')
-        const data = await getRecipe(id)
+        const [data, ingredientList] = await Promise.all([getRecipe(id), getIngredients()])
 
         if (!active) {
           return
         }
 
+        const map = {}
+        for (const ing of (Array.isArray(ingredientList) ? ingredientList : [])) {
+          map[ing.id] = ing.name
+        }
+        setIngredientMap(map)
         setRecipe(data)
         setServings(data?.servings ?? 1)
       } catch (requestError) {
@@ -241,8 +248,13 @@ function RecipeDetail() {
     return (recipe.ingredients ?? []).map((ingredient) => ({
       ...ingredient,
       scaledAmount: formatScaledAmount(Number(ingredient.amount) * ingredientFactor),
+      displayName:
+        ingredient.ingredient_id && ingredientMap[ingredient.ingredient_id]
+          ? ingredientMap[ingredient.ingredient_id]
+          : ingredient.name,
+      linkedToDb: Boolean(ingredient.ingredient_id),
     }))
-  }, [recipe, ingredientFactor])
+  }, [recipe, ingredientFactor, ingredientMap])
 
   const handleEnterEdit = () => {
     setDraft(recipeToDraft(recipe))
@@ -789,7 +801,12 @@ function RecipeDetail() {
                     key={ingredient.id}
                     className="flex items-baseline justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
                   >
-                    <span className="text-mise-400">{ingredient.name}</span>
+                    <span className="text-mise-400">
+                      {ingredient.displayName}
+                      {!ingredient.linkedToDb && (
+                        <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
+                      )}
+                    </span>
                     <span className="text-sm font-medium text-mise-300">
                       {ingredient.scaledAmount} {ingredient.unit}
                     </span>

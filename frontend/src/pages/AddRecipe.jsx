@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createIngredient, createRecipe, matchIngredients, parseRecipe, searchIngredients } from '../api/client.js'
+import { createIngredient, createRecipe, getIngredients, matchIngredients, parseRecipe, searchIngredients } from '../api/client.js'
 
 const inputCls =
   'w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
@@ -327,7 +327,28 @@ export default function AddRecipe() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
+  // Ingredient database for # autocomplete
+  const [dbIngredients, setDbIngredients] = useState([])
+  const [mentionQuery, setMentionQuery] = useState(null) // null = inactive
+  const [mentionStart, setMentionStart] = useState(0)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [ingredientOverrides, setIngredientOverrides] = useState({}) // name → ingredient_id
+  const textareaRef = useRef(null)
+
   const matchedOnceRef = useRef({})
+
+  useEffect(() => {
+    getIngredients()
+      .then((data) => setDbIngredients(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null || !dbIngredients.length) return []
+    const q = mentionQuery.toLowerCase()
+    if (!q) return dbIngredients.slice(0, 8)
+    return dbIngredients.filter((i) => i.name.toLowerCase().includes(q)).slice(0, 8)
+  }, [mentionQuery, dbIngredients])
 
   const handleParse = async () => {
     setParseError('')
@@ -356,6 +377,8 @@ export default function AddRecipe() {
     setActiveTab(0)
     setMatchResults(null)
     setSaveError('')
+    setIngredientOverrides({})
+    setMentionQuery(null)
   }
 
   const runMatching = async (tabIndex) => {
@@ -386,12 +409,14 @@ export default function AddRecipe() {
 
   const applyMatchesToRecipe = (recipe, tabIndex) => {
     const results = matchResults?.[tabIndex]
-    if (!results) return recipe
     return {
       ...recipe,
       ingredients: recipe.ingredients.map((ing, i) => ({
         ...ing,
-        ingredient_id: results[i]?.match?.ingredient_id ?? null,
+        ingredient_id:
+          ingredientOverrides[ing.name] ??
+          results?.[i]?.match?.ingredient_id ??
+          null,
       })),
     }
   }
@@ -443,6 +468,61 @@ export default function AddRecipe() {
       next[activeTab] = null
       return next
     })
+  }
+
+  const selectMention = (ingredient) => {
+    const value = tabs[activeTab] ?? ''
+    const cursorPos = textareaRef.current?.selectionStart ?? (mentionStart + (mentionQuery?.length ?? 0) + 1)
+    const newValue = value.slice(0, mentionStart) + ingredient.name + value.slice(cursorPos)
+    updateTab(newValue)
+    setIngredientOverrides((prev) => ({ ...prev, [ingredient.name]: ingredient.id }))
+    setMentionQuery(null)
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const newCursor = mentionStart + ingredient.name.length
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(newCursor, newCursor)
+      }
+    }, 0)
+  }
+
+  const handleEditorChange = (e) => {
+    const value = e.target.value
+    updateTab(value)
+
+    const pos = e.target.selectionStart
+    const textBefore = value.slice(0, pos)
+    const lineStart = textBefore.lastIndexOf('\n') + 1
+    const hashIndex = textBefore.lastIndexOf('#')
+
+    if (
+      hashIndex !== -1 &&
+      hashIndex >= lineStart &&
+      hashIndex > lineStart && // not at the very start of a line (would be a heading)
+      !textBefore.slice(hashIndex + 1).includes('\n')
+    ) {
+      setMentionQuery(textBefore.slice(hashIndex + 1))
+      setMentionStart(hashIndex)
+      setMentionIndex(0)
+    } else {
+      setMentionQuery(null)
+    }
+  }
+
+  const handleEditorKeyDown = (e) => {
+    if (mentionQuery === null || mentionMatches.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setMentionIndex((i) => Math.min(i + 1, mentionMatches.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setMentionIndex((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      selectMention(mentionMatches[mentionIndex])
+    } else if (e.key === 'Escape') {
+      setMentionQuery(null)
+    }
   }
 
   // ── Stage 1: input ──────────────────────────────────────────────────────
@@ -562,15 +642,38 @@ export default function AddRecipe() {
       )}
 
       {/* Markdown editor */}
-      <div className={multiTab ? 'mt-0' : 'mt-6'}>
+      <div className={`${multiTab ? 'mt-0' : 'mt-6'} relative`}>
         <textarea
+          ref={textareaRef}
           key={activeTab}
           value={tabs[activeTab] ?? ''}
-          onChange={(e) => updateTab(e.target.value)}
+          onChange={handleEditorChange}
+          onKeyDown={handleEditorKeyDown}
           spellCheck={false}
           className="w-full rounded border border-mise-800 bg-mise-900 px-4 py-3 font-mono text-sm leading-relaxed text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           style={{ minHeight: '60vh', resize: 'vertical' }}
         />
+        {mentionQuery !== null && mentionMatches.length > 0 && (
+          <ul className="absolute left-0 top-full z-30 mt-1 max-h-48 w-full overflow-y-auto rounded border border-mise-700 bg-mise-900 shadow-xl">
+            {mentionMatches.map((ing, i) => (
+              <li key={ing.id} className="border-b border-mise-800 last:border-none">
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); selectMention(ing) }}
+                  className={[
+                    'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition focus-visible:outline-none',
+                    i === mentionIndex ? 'bg-mise-800/60' : 'hover:bg-mise-800/40',
+                  ].join(' ')}
+                >
+                  <span className="flex-1 text-mise-300">{ing.name}</span>
+                  <span className="shrink-0 text-xs text-mise-500">
+                    {ing.calories} cal · {ing.protein}g p · {ing.carbs}g c · {ing.fat}g f
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Ingredient matching panel */}
