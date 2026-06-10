@@ -18,6 +18,7 @@ class SearchResult(BaseModel):
     fat: float
     unit: str = "per 100g"
     source: str
+    serving_grams: float | None = None
 
 
 class SearchResponse(BaseModel):
@@ -28,6 +29,51 @@ def _round(value: float | None) -> float:
     if value is None:
         return 0.0
     return round(float(value), 1)
+
+
+def _usda_serving_grams(food: dict) -> float | None:
+    for portion in (food.get("foodPortions") or []):
+        grams = portion.get("gramWeight")
+        if grams:
+            return round(float(grams), 1)
+    return None
+
+
+def _off_serving_grams(product: dict) -> float | None:
+    import re
+
+    def _extract_grams(s: str) -> float | None:
+        if not s:
+            return None
+        # parenthesised value first: "0.66 cup (170 g)" → 170
+        m = re.search(r"\(\s*([\d.]+)\s*g\s*\)", s, re.IGNORECASE)
+        if m:
+            return round(float(m.group(1)), 1)
+        # bare grams: "170 g" or "170g"
+        m = re.search(r"^\s*([\d.]+)\s*g\s*$", s, re.IGNORECASE)
+        if m:
+            return round(float(m.group(1)), 1)
+        return None
+
+    # 1. serving_size string
+    v = _extract_grams(product.get("serving_size") or "")
+    if v is not None:
+        return v
+
+    # 2. nutriments.serving_size string
+    v = _extract_grams((product.get("nutriments") or {}).get("serving_size") or "")
+    if v is not None:
+        return v
+
+    # 3. serving_quantity plain number (already grams)
+    sq = product.get("serving_quantity")
+    if sq:
+        try:
+            return round(float(sq), 1)
+        except (ValueError, TypeError):
+            pass
+
+    return None
 
 
 def _parse_usda(data: dict) -> list[SearchResult]:
@@ -41,6 +87,7 @@ def _parse_usda(data: dict) -> list[SearchResult]:
             carbs=_round(nutrients.get("Carbohydrate, by difference")),
             fat=_round(nutrients.get("Total lipid (fat)")),
             source="usda",
+            serving_grams=_usda_serving_grams(food),
         ))
     return results
 
@@ -59,6 +106,7 @@ def _parse_off(data: dict) -> list[SearchResult]:
             carbs=_round(nutriments.get("carbohydrates_100g")),
             fat=_round(nutriments.get("fat_100g")),
             source="openfoodfacts",
+            serving_grams=_off_serving_grams(product),
         ))
     return results
 

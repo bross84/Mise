@@ -10,6 +10,42 @@ const destructiveButtonClassName =
 const fieldCls =
   'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
+function getServingGrams(result) {
+  const candidates = [
+    result.serving_grams,
+    result.servingGrams,
+    result.serving_size_g,
+    result.serving_size,
+    result.amount_grams,
+    result.amount,
+  ]
+
+  for (const value of candidates) {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric
+    }
+  }
+
+  return 100
+}
+
+function formatScaledValue(value) {
+  const scaled = Number(value)
+  if (!Number.isFinite(scaled)) {
+    return '0'
+  }
+  const rounded = Math.round(scaled * 10) / 10
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+}
+
+function formatServingMacroLabel(result) {
+  const servingGrams = getServingGrams(result)
+  const factor = servingGrams / 100
+
+  return `Per ${formatScaledValue(servingGrams)}g: ${formatScaledValue(result.calories * factor)} cal · ${formatScaledValue(result.protein * factor)}g protein · ${formatScaledValue(result.carbs * factor)}g carbs · ${formatScaledValue(result.fat * factor)}g fat`
+}
+
 
 
 function IngredientDatabase() {
@@ -75,9 +111,7 @@ function IngredientDatabase() {
     return ingredients.filter((i) => i.name.toLowerCase().includes(q))
   }, [ingredients, query])
 
-  const handleQueryChange = (e) => {
-    const q = e.target.value
-    setQuery(q)
+  const runSearch = (q, { immediate = false } = {}) => {
     clearTimeout(timerRef.current)
 
     if (q.trim().length < 2) {
@@ -86,7 +120,7 @@ function IngredientDatabase() {
       return
     }
 
-    timerRef.current = setTimeout(() => {
+    const execute = () => {
       setSearching(true)
       searchIngredients(q)
         .then((data) => {
@@ -95,8 +129,31 @@ function IngredientDatabase() {
         })
         .catch(() => setApiResults([]))
         .finally(() => setSearching(false))
-    }, 400)
+    }
+
+    if (immediate) {
+      execute()
+      return
+    }
+
+    timerRef.current = setTimeout(execute, 400)
   }
+
+  const handleQueryChange = (e) => {
+    const q = e.target.value
+    setQuery(q)
+    runSearch(q)
+  }
+
+  useEffect(() => {
+    if (query.trim().length >= 2) {
+      runSearch(query, { immediate: true })
+    }
+  }, [])
+
+  useEffect(() => () => {
+    clearTimeout(timerRef.current)
+  }, [])
 
   const handleSelectResult = (result) => {
     setDropdownOpen(false)
@@ -173,7 +230,11 @@ function IngredientDatabase() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault()
-              if (!dropdownOpen && query.trim()) handleAddManually()
+              if (query.trim().length >= 2) {
+                runSearch(query, { immediate: true })
+              } else if (!dropdownOpen && query.trim()) {
+                handleAddManually()
+              }
             }
             if (e.key === 'Escape') setDropdownOpen(false)
           }}
@@ -198,7 +259,7 @@ function IngredientDatabase() {
                 >
                   <span className="flex-1 text-sm text-mise-300">{result.name}</span>
                   <span className="shrink-0 text-xs text-mise-500">
-                    {result.calories} kcal &middot; {result.protein}g P &middot; {result.carbs}g C &middot; {result.fat}g F
+                    {formatServingMacroLabel(result)}
                   </span>
                 </button>
               </li>

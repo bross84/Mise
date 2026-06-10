@@ -1,661 +1,636 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createRecipe, getIngredients, searchIngredients } from '../api/client.js'
+import { createIngredient, createRecipe, matchIngredients, parseRecipe, searchIngredients } from '../api/client.js'
 
-const inputClassName =
- 'w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+const inputCls =
+  'w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
-const primaryButtonClassName =
- 'rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+const primaryBtnCls =
+  'rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
-const secondaryButtonClassName =
- ' border border-mise-800 px-3 py-2 text-sm font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+const secondaryBtnCls =
+  'rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
-const destructiveButtonClassName =
- ' px-3 py-2 text-sm font-medium text-rose-400 transition hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+// ─── markdown parser ─────────────────────────────────────────────────────────
 
-function createIngredient(initialValues = {}) {
- return {
- id: `ing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
- name: initialValues.name ?? '',
- amount: initialValues.amount ?? '',
- unit: initialValues.unit ?? '',
- matchedSource: initialValues.matchedSource ?? null,
- }
-}
+function parseMarkdownRecipe(md) {
+  const lines = md.split('\n')
+  let title = ''
+  let servings = 1
+  let tags = []
+  let notes = ''
+  const ingredients = []
+  const steps = []
 
-function IngredientNameInput({ value, onChange, onSelect }) {
-  const [results, setResults] = useState([])
-  const [open, setOpen] = useState(false)
-  const [searching, setSearching] = useState(false)
-  const timerRef = useRef(null)
-  const containerRef = useRef(null)
+  let section = null
+  let notesLines = []
+  let stepCounter = 0
 
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setOpen(false)
+  for (const raw of lines) {
+    const line = raw.trimEnd()
+
+    // Title
+    if (/^#\s+/.test(line)) {
+      title = line.replace(/^#\s+/, '').trim()
+      continue
+    }
+
+    // Servings
+    const servingsMatch = line.match(/^\*\*Servings:\*\*\s*(\d+)/i)
+    if (servingsMatch) { servings = parseInt(servingsMatch[1], 10); continue }
+
+    // Tags
+    const tagsMatch = line.match(/^\*\*Tags:\*\*\s*(.+)/i)
+    if (tagsMatch) {
+      tags = tagsMatch[1].split(',').map((t) => t.trim()).filter(Boolean)
+      continue
+    }
+
+    // Section headers
+    if (/^##\s+Ingredients/i.test(line)) { section = 'ingredients'; continue }
+    if (/^##\s+Steps/i.test(line)) { section = 'steps'; continue }
+    if (/^##\s+Notes/i.test(line)) { section = 'notes'; continue }
+    if (/^##\s+/.test(line)) { section = null; continue }
+
+    if (section === 'ingredients') {
+      // - 250g chicken breast  OR  - 2 eggs
+      const ingMatch = line.match(/^-\s+(\d*\.?\d+)\s*g\s+(.+)/)
+      if (ingMatch) {
+        ingredients.push({
+          id: `ing-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: ingMatch[2].trim(),
+          amount: parseFloat(ingMatch[1]),
+          unit: 'g',
+        })
+      } else {
+        const bare = line.match(/^-\s+(.+)/)
+        if (bare) {
+          ingredients.push({
+            id: `ing-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: bare[1].trim(),
+            amount: 0,
+            unit: 'g',
+          })
+        }
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
-  const handleChange = (e) => {
-    const q = e.target.value
-    onChange(q)
-    clearTimeout(timerRef.current)
-    if (q.trim().length < 2) {
-      setResults([])
-      setOpen(false)
-      return
-    }
-    timerRef.current = setTimeout(() => {
-      setSearching(true)
-      searchIngredients(q)
-        .then((data) => {
-          setResults(data?.results ?? [])
-          setOpen(true)
+    if (section === 'steps') {
+      const stepMatch = line.match(/^\d+\.\s+(.+)/)
+      if (stepMatch) {
+        stepCounter++
+        steps.push({
+          id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title: `Step ${stepCounter}`,
+          content: stepMatch[1].trim(),
+          timer_seconds: null,
         })
-        .catch(() => setResults([]))
-        .finally(() => setSearching(false))
-    }, 400)
+      }
+    }
+
+    if (section === 'notes' && line.trim()) {
+      notesLines.push(line.trim())
+    }
   }
 
-  const handleSelect = (result) => {
-    onSelect(result)
-    setOpen(false)
-    setResults([])
+  notes = notesLines.join('\n').trim() || null
+
+  return { title, servings, tags, ingredients, steps, notes }
+}
+
+// Split on --- separator, ignoring empty blocks
+function splitMarkdownRecipes(md) {
+  return md
+    .split(/^---$/m)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function formatServingMacroLabel(result) {
+  const servingCandidate =
+    result.serving_grams ??
+    result.serving_size_g ??
+    result.serving_size ??
+    result.amount_grams ??
+    100
+  const numericServing = Number(servingCandidate)
+  const servingG = Number.isFinite(numericServing) && numericServing > 0 ? numericServing : 100
+  const scale = servingG / 100
+
+  return `Per ${servingG}g: ${Math.round((Number(result.calories) || 0) * scale)} cal · ${Math.round((Number(result.protein) || 0) * scale)}g protein · ${Math.round((Number(result.carbs) || 0) * scale)}g carbs · ${Math.round((Number(result.fat) || 0) * scale)}g fat`
+}
+
+// ─── IngredientSearchPanel ────────────────────────────────────────────────────
+// Inline panel (not a dropdown) for searching USDA/OFF and adding an ingredient
+
+function IngredientSearchPanel({ ingredientName, onAdded, onClose }) {
+  const [query, setQuery] = useState(ingredientName)
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [savingIndex, setSavingIndex] = useState(null)
+  const [error, setError] = useState('')
+  const timerRef = useRef(null)
+
+  const runSearch = (q, { immediate = false } = {}) => {
+    clearTimeout(timerRef.current)
+    setError('')
+    if (q.trim().length < 2) {
+      setResults([])
+      return
+    }
+    const execute = () => {
+      setSearching(true)
+      searchIngredients(q)
+        .then((d) => setResults(d?.results ?? []))
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false))
+    }
+    if (immediate) { execute(); return }
+    timerRef.current = setTimeout(execute, 400)
+  }
+
+  // Fire search immediately on mount with the pre-filled name
+  useEffect(() => {
+    runSearch(ingredientName, { immediate: true })
+    return () => clearTimeout(timerRef.current)
+  }, [])
+
+  const handleQueryChange = (e) => {
+    const q = e.target.value
+    setQuery(q)
+    runSearch(q)
+  }
+
+  const handleAdd = async (result, index) => {
+    setSavingIndex(index)
+    setError('')
+    try {
+      await createIngredient({
+        name: result.name,
+        calories: result.calories,
+        protein: result.protein,
+        carbs: result.carbs,
+        fat: result.fat,
+        unit: 'per 100g',
+      })
+      const matchedNow = await onAdded()
+      if (matchedNow) {
+        onClose()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add ingredient.')
+    } finally {
+      setSavingIndex(null)
+    }
   }
 
   return (
-    <div ref={containerRef} className="relative md:col-span-4">
-      <input
-        type="text"
-        value={value}
-        onChange={handleChange}
-        onFocus={() => results.length > 0 && setOpen(true)}
-        onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
-        placeholder="Ingredient name"
-        autoComplete="off"
-        className="w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-      />
-      {searching && (
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-mise-500">…</span>
-      )}
-      {open && results.length > 0 && (
-        <ul className="absolute z-20 mt-1 w-full rounded border border-mise-800 bg-mise-900 shadow-lg">
-          {results.map((result, i) => (
-            <li key={i} className="border-b border-mise-800 last:border-none">
+    <div className="mt-2 rounded border border-mise-700/60 bg-mise-950 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={query}
+            onChange={handleQueryChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); runSearch(query, { immediate: true }) }
+            }}
+            placeholder="Search USDA / Open Food Facts…"
+            autoFocus
+            className="w-full rounded border border-mise-800 bg-mise-900 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          />
+          {searching && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-mise-500">Searching…</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded border border-mise-800 px-2.5 py-2 text-xs text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+        >
+          Close
+        </button>
+      </div>
+
+      {error && <p className="mb-2 text-xs text-rose-400">{error}</p>}
+
+      {results.length > 0 && (
+        <ul className="space-y-1">
+          {results.map((r, i) => (
+            <li key={i} className="flex items-center gap-3 rounded border border-mise-800 bg-mise-900/60 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-mise-300">{r.name}</span>
+                  {r.source === 'usda' && (
+                    <span className="rounded-full border border-sky-500/30 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">USDA</span>
+                  )}
+                  {r.source === 'openfoodfacts' && (
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">OFF</span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-mise-500">{formatServingMacroLabel(r)}</p>
+              </div>
               <button
                 type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleSelect(result)}
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-mise-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                disabled={savingIndex !== null}
+                onClick={() => handleAdd(r, i)}
+                className="shrink-0 rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
               >
-                <span className="flex-1 text-sm text-mise-300">{result.name}</span>
-                <span className="shrink-0 text-xs text-mise-500">
-                  {result.calories} kcal &middot; {result.protein}p &middot; {result.carbs}c &middot; {result.fat}f
-                </span>
-                <span className="rounded border border-mise-700 bg-mise-800/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-mise-400">
-                  {result.source === 'usda' ? 'USDA' : 'OFF'}
-                </span>
+                {savingIndex === i ? 'Adding…' : 'Add'}
               </button>
             </li>
           ))}
         </ul>
       )}
+
+      {!searching && results.length === 0 && query.trim().length >= 2 && (
+        <p className="text-xs text-mise-500">No results found.</p>
+      )}
     </div>
   )
 }
 
-function createStep(initialValues = {}) {
- return {
- id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
- title: initialValues.title ?? '',
- content: initialValues.content ?? '',
- timerSeconds: initialValues.timerSeconds ?? '',
- }
+// ─── MatchedIngredientList ────────────────────────────────────────────────────
+
+function MatchedIngredientList({ matchResults, onRerun }) {
+  const [openSearch, setOpenSearch] = useState(null) // ingredient name with panel open
+
+  if (!matchResults) return null
+
+  const unmatchedResults = matchResults
+    .map((result, index) => ({ result, index }))
+    .filter((entry) => !entry.result.match)
+
+  if (unmatchedResults.length === 0) return null
+
+  return (
+    <div className="mt-4 rounded border border-theme bg-mise-900 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredient Matches</h3>
+        <button type="button" onClick={onRerun}
+          className="rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300">
+          Re-run matching
+        </button>
+      </div>
+      <ul className="space-y-2">
+        {unmatchedResults.map(({ result: r, index: i }) => {
+          const isOpen = openSearch === r.name
+          return (
+            <li key={i}>
+              <div className="flex items-center gap-3 rounded border border-theme bg-mise-950/50 px-3 py-2">
+                <span className="text-sm">🔴</span>
+                <span className="flex-1 text-sm text-mise-300">{r.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setOpenSearch(isOpen ? null : r.name)}
+                  className="rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300"
+                >
+                  {isOpen ? 'Cancel' : 'Search & Add'}
+                </button>
+              </div>
+              {isOpen && (
+                <IngredientSearchPanel
+                  ingredientName={r.name}
+                  onClose={() => setOpenSearch(null)}
+                  onAdded={() => onRerun(i)}
+                />
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
 }
 
-function buildEmptyRecipeDraft() {
- return {
- title: '',
- servings: 1,
- tags: [],
- ingredients: [createIngredient()],
- steps: [createStep()],
- notes: '',
- }
-}
+// ─── AddRecipe ───────────────────────────────────────────────────────────────
 
-
-function AddRecipe() {
+export default function AddRecipe() {
   const navigate = useNavigate()
-  const [stage, setStage] = useState('input')
+
+  const [stage, setStage] = useState('input')   // 'input' | 'editor'
+
+  // Stage 1
   const [rawText, setRawText] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
-  const [tagInput, setTagInput] = useState('')
-  const [recipeDraft, setRecipeDraft] = useState(() => buildEmptyRecipeDraft())
-  const [ingredientNameSet, setIngredientNameSet] = useState(() => new Set())
+  const [parsing, setParsing] = useState(false)
+  const [parseError, setParseError] = useState('')
+
+  // Stage 2 — editor
+  const [tabs, setTabs] = useState([''])
+  const [activeTab, setActiveTab] = useState(0)
+
+  // Stage 2 — matching
+  const [matching, setMatching] = useState(false)
+  const [matchResults, setMatchResults] = useState(null) // per-tab: array indexed by tab
+
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
-  useEffect(() => {
-    let active = true
+  const matchedOnceRef = useRef({})
 
-    async function loadIngredients() {
-      try {
-        const data = await getIngredients()
-        if (!active) {
-          return
-        }
-
-        setIngredientNameSet(
-          new Set((Array.isArray(data) ? data : []).map((ingredient) => ingredient.name.trim().toLowerCase())),
-        )
-      } catch {
-        if (active) {
-          setIngredientNameSet(new Set())
-        }
-      }
+  const handleParse = async () => {
+    setParseError('')
+    setParsing(true)
+    try {
+      const result = await parseRecipe({ text: rawText.trim(), url: sourceUrl.trim() || undefined })
+      const blocks = splitMarkdownRecipes(result.markdown)
+      setTabs(blocks.length ? blocks : [result.markdown])
+      setActiveTab(0)
+      setMatchResults(null)
+      setSaveError('')
+      setStage('editor')
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : "Couldn't parse the recipe — try rephrasing or check the format.")
+    } finally {
+      setParsing(false)
     }
-
-    void loadIngredients()
-
-    return () => {
-      active = false
-    }
-  }, [])
-
-  const isIngredientMatched = (name) => ingredientNameSet.has(name.trim().toLowerCase())
-
-  const updateDraftField = (field, value) => {
-    setRecipeDraft((currentDraft) => ({ ...currentDraft, [field]: value }))
-  }
-
- const updateIngredient = (ingredientId, field, value) => {
- setRecipeDraft((currentDraft) => ({
- ...currentDraft,
- ingredients: currentDraft.ingredients.map((ingredient) =>
- ingredient.id === ingredientId
-   ? { ...ingredient, [field]: value, ...(field === 'name' ? { matchedSource: null } : {}) }
-   : ingredient,
- ),
- }))
- }
-
- const updateStep = (stepId, field, value) => {
- setRecipeDraft((currentDraft) => ({
- ...currentDraft,
- steps: currentDraft.steps.map((step) =>
- step.id === stepId ? { ...step, [field]: value } : step,
- ),
- }))
- }
-
- const addTag = (value) => {
- const normalizedTag = value.trim()
- if (!normalizedTag) {
- return
- }
-
- setRecipeDraft((currentDraft) => {
- const hasTag = currentDraft.tags.some((tag) => tag.toLowerCase() === normalizedTag.toLowerCase())
- if (hasTag) {
- return currentDraft
- }
-
- return {
- ...currentDraft,
- tags: [...currentDraft.tags, normalizedTag],
- }
- })
-
- setTagInput('')
- }
-
- const removeTag = (tagToRemove) => {
- setRecipeDraft((currentDraft) => ({
- ...currentDraft,
- tags: currentDraft.tags.filter((tag) => tag !== tagToRemove),
- }))
- }
-
-  const handleParseRecipe = () => {
-    const guessedTitle =
-      rawText.trim().split(/\r?\n/).find(Boolean)?.slice(0, 80) || 'Untitled Recipe'
-
-    setRecipeDraft((currentDraft) => ({
-      ...currentDraft,
-      title: currentDraft.title.trim() ? currentDraft.title : guessedTitle,
-      notes: currentDraft.notes.trim() ? currentDraft.notes : rawText.trim(),
-    }))
-    setTagInput('')
-    setSaveError('')
-    setStage('review')
   }
 
   const handleStartOver = () => {
+    setStage('input')
     setRawText('')
     setSourceUrl('')
-    setTagInput('')
-    setRecipeDraft(buildEmptyRecipeDraft())
+    setParseError('')
+    setTabs([''])
+    setActiveTab(0)
+    setMatchResults(null)
     setSaveError('')
-    setStage('input')
   }
 
-  const handleSaveRecipe = async (event) => {
-    event.preventDefault()
+  const runMatching = async (tabIndex) => {
+    const recipe = parseMarkdownRecipe(tabs[tabIndex])
+    if (!recipe.ingredients.length) return
+    setMatching(true)
+    try {
+      const data = await matchIngredients(
+        recipe.ingredients.map((i) => ({ name: i.name, amount: i.amount, unit: i.unit }))
+      )
+      setMatchResults((prev) => {
+        const next = prev ? [...prev] : Array(tabs.length).fill(null)
+        next[tabIndex] = data.results
+        return next
+      })
+    } catch {
+      // matching failure is non-fatal
+    } finally {
+      setMatching(false)
+    }
+  }
+
+  // Run matching whenever we enter the editor stage or switch tabs
+  const handleTabChange = (i) => {
+    setActiveTab(i)
+    if (!matchResults?.[i]) runMatching(i)
+  }
+
+  const applyMatchesToRecipe = (recipe, tabIndex) => {
+    const results = matchResults?.[tabIndex]
+    if (!results) return recipe
+    return {
+      ...recipe,
+      ingredients: recipe.ingredients.map((ing, i) => ({
+        ...ing,
+        ingredient_id: results[i]?.match?.ingredient_id ?? null,
+      })),
+    }
+  }
+
+  const saveOne = async (index) => {
+    const recipe = applyMatchesToRecipe(parseMarkdownRecipe(tabs[index]), index)
+    return createRecipe(recipe)
+  }
+
+  const handleSaveOne = async () => {
     setSaveError('')
     setSaving(true)
-
-    const assembledRecipe = {
-      title: recipeDraft.title.trim(),
-      servings: Number(recipeDraft.servings) || 1,
-      tags: recipeDraft.tags,
-      ingredients: recipeDraft.ingredients
-        .filter((ingredient) => ingredient.name.trim() || ingredient.amount || ingredient.unit.trim())
-        .map((ingredient) => ({
-          id: ingredient.id,
-          name: ingredient.name.trim(),
-          amount: Number(ingredient.amount) || 0,
-          unit: ingredient.unit.trim(),
-        })),
-      steps: recipeDraft.steps
-        .filter((step) => step.title.trim() || step.content.trim() || step.timerSeconds)
-        .map((step) => ({
-          id: step.id,
-          title: step.title.trim(),
-          content: step.content.trim(),
-          timer_seconds: step.timerSeconds === '' ? null : Number(step.timerSeconds),
-        })),
-      notes: recipeDraft.notes.trim() || null,
-    }
-
     try {
-      const createdRecipe = await createRecipe(assembledRecipe)
-      navigate(`/recipe/${createdRecipe.id}`)
-    } catch (requestError) {
-      setSaveError(requestError instanceof Error ? requestError.message : 'Failed to save recipe.')
+      const created = await saveOne(activeTab)
+      if (tabs.length === 1) {
+        navigate(`/recipe/${created.id}`)
+      } else {
+        const next = tabs.filter((_, i) => i !== activeTab)
+        setTabs(next)
+        setActiveTab(Math.min(activeTab, next.length - 1))
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save recipe.')
     } finally {
       setSaving(false)
     }
   }
 
- if (stage === 'input') {
- return (
- <section className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-3xl items-center">
- <div className="w-full rounded border border-theme bg-mise-900/70 p-6 sm:p-8">
- <header>
- <h1 className="font-display text-3xl font-semibold text-mise-300">Add Recipe</h1>
- <p className="mt-2 text-sm text-mise-500">Paste recipe content or provide a source URL, then parse into an editable draft.</p>
- </header>
+  const handleSaveAll = async () => {
+    setSaveError('')
+    setSaving(true)
+    try {
+      const results = []
+      for (let i = 0; i < tabs.length; i++) results.push(await saveOne(i))
+      navigate(`/recipe/${results[0].id}`)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save recipes.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
- <div className="mt-6 space-y-5">
- <div>
- <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="raw-recipe-text">
- Recipe Text
- </label>
- <textarea
- id="raw-recipe-text"
- rows={12}
- value={rawText}
- onChange={(event) => setRawText(event.target.value)}
- placeholder="Paste a recipe, ingredients list, or any text..."
- className={inputClassName}
- />
- </div>
+  const updateTab = (value) => {
+    setTabs((prev) => prev.map((t, i) => i === activeTab ? value : t))
+    // clear stale match results for this tab when markdown changes
+    setMatchResults((prev) => {
+      if (!prev) return prev
+      const next = [...prev]
+      next[activeTab] = null
+      return next
+    })
+  }
 
- <div>
- <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="source-url">
- Source URL
- </label>
- <div className="flex flex-col gap-2 sm:flex-row">
- <input
- id="source-url"
- type="url"
- value={sourceUrl}
- onChange={(event) => setSourceUrl(event.target.value)}
- placeholder="https://example.com/recipe"
- className={inputClassName}
- />
- <button
- type="button"
- className={`${secondaryButtonClassName} whitespace-nowrap`}
- aria-label="Fetch recipe from URL"
- >
- Fetch
- </button>
- </div>
- </div>
+  // ── Stage 1: input ──────────────────────────────────────────────────────
 
- <button
- type="button"
- onClick={handleParseRecipe}
- className="w-full bg-ember px-5 py-3 text-base font-semibold text-mise-950 transition hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
- >
- Parse Recipe
- </button>
- </div>
- </div>
- </section>
- )
- }
+  if (stage === 'input') {
+    return (
+      <section className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-3xl items-center">
+        <div className="w-full rounded border border-theme bg-mise-900/70 p-6 sm:p-8">
+          <header>
+            <h1 className="font-display text-3xl font-semibold text-mise-300">Add Recipe</h1>
+            <p className="mt-2 text-sm text-mise-500">
+              Paste recipe text or a URL — AI will format it into clean markdown you can edit before saving.
+            </p>
+          </header>
 
- return (
- <section className="mx-auto w-full max-w-6xl">
- <header>
- <h1 className="font-display text-3xl font-semibold text-mise-300">Review Parsed Recipe</h1>
- <p className="mt-2 text-sm text-mise-500">Edit parsed fields inline before saving.</p>
- </header>
+          {parseError && (
+            <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              {parseError}
+            </div>
+          )}
 
- {saveError && (
- <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
- {saveError}
- </div>
- )}
+          <div className="mt-6 space-y-5">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="raw-recipe-text">
+                Recipe Text
+              </label>
+              <textarea
+                id="raw-recipe-text"
+                rows={12}
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+                placeholder="Paste a recipe, ingredients list, or any text..."
+                className={inputCls}
+              />
+            </div>
 
- <form onSubmit={handleSaveRecipe} className="mt-6 space-y-6">
- <div className="grid gap-4 md:grid-cols-2">
- <div className="md:col-span-2">
- <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-title">
- Title
- </label>
- <input
- id="recipe-title"
- type="text"
- value={recipeDraft.title}
- onChange={(event) => updateDraftField('title', event.target.value)}
- className={inputClassName}
- required
- />
- </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="source-url">
+                Source URL
+              </label>
+              <input
+                id="source-url"
+                type="url"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleParse() } }}
+                placeholder="https://example.com/recipe"
+                className={inputCls}
+              />
+            </div>
 
- <div>
- <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-servings">
- Servings
- </label>
- <input
- id="recipe-servings"
- type="number"
- min="1"
- value={recipeDraft.servings}
- onChange={(event) => updateDraftField('servings', event.target.value)}
- className={inputClassName}
- required
- />
- </div>
+            <button
+              type="button"
+              onClick={handleParse}
+              disabled={parsing || (!rawText.trim() && !sourceUrl.trim())}
+              className={`w-full py-3 text-base font-semibold ${primaryBtnCls}`}
+            >
+              {parsing ? 'Formatting recipe…' : 'Parse Recipe'}
+            </button>
+          </div>
+        </div>
+      </section>
+    )
+  }
 
- <div>
- <span className="mb-2 block text-sm font-medium text-mise-400" id="recipe-tags-label">
- Tags
- </span>
- <div className="rounded border border-mise-800 bg-mise-900 p-3" aria-labelledby="recipe-tags-label">
- <div className="flex flex-wrap gap-2">
- {recipeDraft.tags.map((tag) => (
- <span
- key={`tag-${tag}`}
- className="inline-flex items-center gap-2 border rounded border-mise-800 bg-mise-800 px-2.5 py-1 text-xs font-medium text-mise-300"
- >
- {tag}
- <button
- type="button"
- onClick={() => removeTag(tag)}
- className="text-mise-500 transition hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
- aria-label={`Remove tag ${tag}`}
- >
- X
- </button>
- </span>
- ))}
- </div>
+  // ── Stage 2: markdown editor ────────────────────────────────────────────
 
- <div className="mt-3 flex flex-col gap-2 sm:flex-row">
- <label className="sr-only" htmlFor="new-tag-input">
- Add tag
- </label>
- <input
- id="new-tag-input"
- type="text"
- value={tagInput}
- onChange={(event) => setTagInput(event.target.value)}
- onKeyDown={(event) => {
- if (event.key === 'Enter') {
- event.preventDefault()
- addTag(tagInput)
- }
- }}
- placeholder="Add a tag"
- className={inputClassName}
- />
- <button
- type="button"
- onClick={() => addTag(tagInput)}
- className={`${secondaryButtonClassName} whitespace-nowrap`}
- >
- Add Tag
- </button>
- </div>
- </div>
- </div>
- </div>
+  const multiTab = tabs.length > 1
 
- <section className="rounded border border-theme bg-mise-900 p-4">
- <div className="mb-4 flex items-center justify-between">
- <h2 className="text-lg font-semibold text-mise-300">Ingredients</h2>
- <button
- type="button"
- onClick={() =>
- setRecipeDraft((currentDraft) => ({
- ...currentDraft,
- ingredients: [...currentDraft.ingredients, createIngredient()],
- }))
- }
- className={secondaryButtonClassName}
- >
- Add ingredient
- </button>
- </div>
+  const tabLabel = (md, i) => {
+    const titleLine = md.split('\n').find((l) => /^#\s+/.test(l))
+    return titleLine ? titleLine.replace(/^#\s+/, '').trim().slice(0, 32) : `Recipe ${i + 1}`
+  }
 
- <div className="space-y-3">
- {recipeDraft.ingredients.map((ingredient, index) => {
- const matched = ingredient.matchedSource != null || isIngredientMatched(ingredient.name)
+  // Kick off matching for the active tab when first entering the editor stage
+  if (stage === 'editor' && !matchedOnceRef.current[activeTab] && !matching) {
+    matchedOnceRef.current[activeTab] = true
+    runMatching(activeTab)
+  }
 
- return (
- <div
- key={ingredient.id}
- className="grid gap-2 rounded border border-theme bg-mise-950/50 p-4 md:grid-cols-12"
- >
- <label htmlFor={`ingredient-name-${ingredient.id}`} className="sr-only">
- Ingredient {index + 1} name
- </label>
- <IngredientNameInput
-   value={ingredient.name}
-   onChange={(value) => updateIngredient(ingredient.id, 'name', value)}
-   onSelect={(result) => {
-     setRecipeDraft((currentDraft) => ({
-       ...currentDraft,
-       ingredients: currentDraft.ingredients.map((ing) =>
-         ing.id === ingredient.id
-           ? { ...ing, name: result.name, matchedSource: result.source }
-           : ing,
-       ),
-     }))
-   }}
- />
- <label htmlFor={`ingredient-amount-${ingredient.id}`} className="sr-only">
- Ingredient {index + 1} amount
- </label>
- <input
- id={`ingredient-amount-${ingredient.id}`}
- type="text"
- value={ingredient.amount}
- onChange={(event) => updateIngredient(ingredient.id, 'amount', event.target.value)}
- placeholder="Amount"
- className="rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember md:col-span-2"
- />
- <label htmlFor={`ingredient-unit-${ingredient.id}`} className="sr-only">
- Ingredient {index + 1} unit
- </label>
- <input
- id={`ingredient-unit-${ingredient.id}`}
- type="text"
- value={ingredient.unit}
- onChange={(event) => updateIngredient(ingredient.id, 'unit', event.target.value)}
- placeholder="Unit"
- className="rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember md:col-span-2"
- />
+  return (
+    <section className="mx-auto w-full max-w-5xl">
+      <header>
+        <h1 className="font-display text-3xl font-semibold text-mise-300">
+          {multiTab ? 'Review Parsed Recipes' : 'Review Parsed Recipe'}
+        </h1>
+        <p className="mt-2 text-sm text-mise-500">
+          Edit the markdown below, then save. Changes here are reflected when saved.
+        </p>
+      </header>
 
- <div className="flex items-center gap-2 md:col-span-3">
- <span
- className={[
- 'inline-flex items-center rounded border px-2.5 py-1 text-xs font-semibold',
- matched
- ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
- : 'border-rose-500/40 bg-rose-500/15 text-rose-300',
- ].join(' ')}
- >
- {matched
-   ? `🟢 ${ingredient.matchedSource === 'usda' ? 'USDA' : ingredient.matchedSource === 'openfoodfacts' ? 'OFF' : 'Matched'}`
-   : '🔴 Unmatched'}
- </span>
- {!matched && (
- <button
- type="button"
- className="rounded border border-mise-800 bg-mise-900 px-2 py-1 text-xs font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
- aria-label={`Add ${ingredient.name || 'ingredient'} to database`}
- >
- Add to database
- </button>
- )}
- </div>
+      {saveError && (
+        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          {saveError}
+        </div>
+      )}
 
- <button
- type="button"
- onClick={() =>
- setRecipeDraft((currentDraft) => ({
- ...currentDraft,
- ingredients:
- currentDraft.ingredients.length === 1
- ? currentDraft.ingredients
- : currentDraft.ingredients.filter((current) => current.id !== ingredient.id),
- }))
- }
- className={`${destructiveButtonClassName} md:col-span-1`}
- aria-label={`Remove ingredient ${index + 1}`}
- >
- -
- </button>
- </div>
- )
- })}
- </div>
- </section>
+      {/* Tab strip */}
+      {multiTab && (
+        <div className="mt-6 flex gap-1 overflow-x-auto border-b border-mise-800 pb-px">
+          {tabs.map((md, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => handleTabChange(i)}
+              className={[
+                'shrink-0 rounded-t border border-b-0 px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
+                activeTab === i
+                  ? 'border-mise-700 bg-mise-900 text-mise-300'
+                  : 'border-transparent text-mise-500 hover:text-mise-300',
+              ].join(' ')}
+            >
+              {tabLabel(md, i)}
+            </button>
+          ))}
+        </div>
+      )}
 
- <section className="rounded border border-theme bg-mise-900 p-4">
- <div className="mb-4 flex items-center justify-between">
- <h2 className="text-lg font-semibold text-mise-300">Steps</h2>
- <button
- type="button"
- onClick={() =>
- setRecipeDraft((currentDraft) => ({
- ...currentDraft,
- steps: [...currentDraft.steps, createStep()],
- }))
- }
- className={secondaryButtonClassName}
- >
- Add step
- </button>
- </div>
+      {/* Markdown editor */}
+      <div className={multiTab ? 'mt-0' : 'mt-6'}>
+        <textarea
+          key={activeTab}
+          value={tabs[activeTab] ?? ''}
+          onChange={(e) => updateTab(e.target.value)}
+          spellCheck={false}
+          className="w-full rounded border border-mise-800 bg-mise-900 px-4 py-3 font-mono text-sm leading-relaxed text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          style={{ minHeight: '60vh', resize: 'vertical' }}
+        />
+      </div>
 
- <div className="space-y-3">
- {recipeDraft.steps.map((step, index) => (
- <div key={step.id} className="rounded border border-theme bg-mise-950/50 p-4">
- <div className="grid gap-2 md:grid-cols-12">
- <label htmlFor={`step-title-${step.id}`} className="sr-only">
- Step {index + 1} title
- </label>
- <input
- id={`step-title-${step.id}`}
- type="text"
- value={step.title}
- onChange={(event) => updateStep(step.id, 'title', event.target.value)}
- placeholder="Step title"
- className="rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember md:col-span-6"
- />
- <label htmlFor={`step-timer-${step.id}`} className="sr-only">
- Step {index + 1} timer in seconds
- </label>
- <input
- id={`step-timer-${step.id}`}
- type="number"
- min="0"
- value={step.timerSeconds}
- onChange={(event) => updateStep(step.id, 'timerSeconds', event.target.value)}
- placeholder="Timer (seconds, optional)"
- className="rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember md:col-span-5"
- />
- <button
- type="button"
- onClick={() =>
- setRecipeDraft((currentDraft) => ({
- ...currentDraft,
- steps:
- currentDraft.steps.length === 1
- ? currentDraft.steps
- : currentDraft.steps.filter((current) => current.id !== step.id),
- }))
- }
- className={`${destructiveButtonClassName} md:col-span-1`}
- aria-label={`Remove step ${index + 1}`}
- >
- -
- </button>
- </div>
+      {/* Ingredient matching panel */}
+      {matching && (
+        <p className="mt-3 text-xs text-mise-500">Matching ingredients…</p>
+      )}
+      <MatchedIngredientList
+        matchResults={matchResults?.[activeTab] ?? null}
+        onRerun={async (resultIndex) => {
+          if (resultIndex === undefined) {
+            matchedOnceRef.current[activeTab] = false
+            setMatchResults((prev) => { const n = prev ? [...prev] : []; n[activeTab] = null; return n })
+            await runMatching(activeTab)
+            return false
+          }
 
- <label htmlFor={`step-content-${step.id}`} className="sr-only">
- Step {index + 1} content
- </label>
- <textarea
- id={`step-content-${step.id}`}
- value={step.content}
- onChange={(event) => updateStep(step.id, 'content', event.target.value)}
- placeholder="Step instructions"
- rows={3}
- className="mt-2 w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
- />
- </div>
- ))}
- </div>
- </section>
+          const recipe = parseMarkdownRecipe(tabs[activeTab])
+          const ingredient = recipe.ingredients[resultIndex]
+          if (!ingredient) {
+            return false
+          }
 
- <div>
- <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-notes">
- Notes
- </label>
- <textarea
- id="recipe-notes"
- value={recipeDraft.notes}
- onChange={(event) => updateDraftField('notes', event.target.value)}
- rows={4}
- className={inputClassName}
- placeholder="Any prep, storage, or serving notes"
- />
- </div>
+          try {
+            const data = await matchIngredients([
+              { name: ingredient.name, amount: ingredient.amount, unit: ingredient.unit },
+            ])
 
- <div className="flex flex-wrap items-center gap-3">
- <button type="submit" disabled={saving} className={primaryButtonClassName}>
- {saving ? 'Saving...' : 'Save Recipe'}
- </button>
- <button type="button" onClick={handleStartOver} className={secondaryButtonClassName}>
- Start Over
- </button>
- </div>
- </form>
- </section>
- )
+            const refreshed = data?.results?.[0]
+            setMatchResults((prev) => {
+              if (!prev?.[activeTab]) {
+                return prev
+              }
+
+              const next = [...prev]
+              const tabResults = [...next[activeTab]]
+              tabResults[resultIndex] = refreshed ?? tabResults[resultIndex]
+              next[activeTab] = tabResults
+              return next
+            })
+
+            return Boolean(refreshed?.match)
+          } catch {
+            return false
+          }
+        }}
+      />
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        {multiTab && (
+          <button type="button" onClick={handleSaveAll} disabled={saving || matching} className={primaryBtnCls}>
+            {saving ? 'Saving…' : `Save All (${tabs.length})`}
+          </button>
+        )}
+        <button type="button" onClick={handleSaveOne} disabled={saving || matching} className={primaryBtnCls}>
+          {saving ? 'Saving…' : multiTab ? 'Save This One' : 'Save Recipe'}
+        </button>
+        <button type="button" onClick={handleStartOver} className={secondaryBtnCls}>
+          Start Over
+        </button>
+      </div>
+    </section>
+  )
 }
-
-export default AddRecipe

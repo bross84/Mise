@@ -18,6 +18,14 @@ load_dotenv(APP_ENV_FILE)
 
 app = FastAPI(title="Mise API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 class AITestRequest(BaseModel):
     prompt: str
@@ -35,14 +43,6 @@ def on_startup():
 app.include_router(recipes.router)
 app.include_router(ingredients.router)
 app.include_router(settings.router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 @app.get("/api/health")

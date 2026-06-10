@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api'
+const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
 
 async function request(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
@@ -46,6 +46,20 @@ export function createRecipe(data) {
   return request('/recipes', {
     method: 'POST',
     body: JSON.stringify(data),
+  })
+}
+
+export function parseRecipe(data) {
+  return request('/recipes/parse', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export function matchIngredients(ingredients) {
+  return request('/recipes/match-ingredients', {
+    method: 'POST',
+    body: JSON.stringify({ ingredients }),
   })
 }
 

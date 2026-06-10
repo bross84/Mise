@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Pencil, Star, Trash2, X } from 'lucide-react'
+import { Pencil, Share2, Star, Trash2, X } from 'lucide-react'
 import { deleteRecipe, getRecipe, updateRecipe } from '../api/client.js'
 
 const tagHeaderTheme = {
@@ -107,6 +107,41 @@ function recipeToDraft(recipe) {
   }
 }
 
+function buildRecipeJsonLd(recipe) {
+  const ingredients = (recipe.ingredients ?? []).map((ingredient) => {
+    const amount = ingredient.amount !== undefined && ingredient.amount !== null ? `${ingredient.amount} ` : ''
+    const unit = ingredient.unit ? `${ingredient.unit} ` : ''
+    return `${amount}${unit}${ingredient.name ?? ''}`.trim()
+  })
+
+  const instructions = (recipe.steps ?? []).map((step, index) => ({
+    '@type': 'HowToStep',
+    name: step.title?.trim() || `Step ${index + 1}`,
+    text: step.content?.trim() || step.title?.trim() || '',
+  }))
+
+  const macros = recipe.macros ?? recipe.nutrition
+  const nutrition = macros
+    ? {
+        '@type': 'NutritionInformation',
+        calories: `${macros.calories} calories`,
+        proteinContent: `${macros.protein}g`,
+        carbohydrateContent: `${macros.carbs}g`,
+        fatContent: `${macros.fat}g`,
+      }
+    : undefined
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Recipe',
+    name: recipe.title ?? '',
+    recipeYield: recipe.servings === 1 ? '1 serving' : `${recipe.servings ?? 1} servings`,
+    recipeIngredient: ingredients,
+    recipeInstructions: instructions,
+    ...(nutrition ? { nutrition } : {}),
+  }
+}
+
 function RecipeDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -121,6 +156,8 @@ function RecipeDetail() {
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [copyConfirmationVisible, setCopyConfirmationVisible] = useState(false)
+  const copyConfirmationTimerRef = useRef(null)
 
   useEffect(() => {
     let active = true
@@ -157,6 +194,33 @@ function RecipeDetail() {
       active = false
     }
   }, [id])
+
+  useEffect(() => {
+    if (!recipe) {
+      return undefined
+    }
+
+    const scriptId = `recipe-json-ld-${recipe.id}`
+    document.getElementById(scriptId)?.remove()
+
+    const script = document.createElement('script')
+    script.id = scriptId
+    script.type = 'application/ld+json'
+    script.textContent = JSON.stringify(buildRecipeJsonLd(recipe))
+    document.head.appendChild(script)
+
+    return () => {
+      script.remove()
+    }
+  }, [recipe])
+
+  useEffect(() => {
+    return () => {
+      if (copyConfirmationTimerRef.current) {
+        window.clearTimeout(copyConfirmationTimerRef.current)
+      }
+    }
+  }, [])
 
   const headerTheme = getHeaderTheme(recipe?.tags?.[0])
 
@@ -318,6 +382,23 @@ function RecipeDetail() {
     }
   }
 
+  const handleShareRecipeLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopyConfirmationVisible(true)
+
+      if (copyConfirmationTimerRef.current) {
+        window.clearTimeout(copyConfirmationTimerRef.current)
+      }
+
+      copyConfirmationTimerRef.current = window.setTimeout(() => {
+        setCopyConfirmationVisible(false)
+      }, 2000)
+    } catch {
+      window.alert('Failed to copy recipe link. Please try again.')
+    }
+  }
+
   return (
     <section className="mx-auto w-full max-w-5xl">
       <div className="flex items-center justify-between gap-3">
@@ -368,6 +449,22 @@ function RecipeDetail() {
                 <Trash2 size={15} />
                 Delete Recipe
               </button>
+              <button
+                type="button"
+                onClick={handleShareRecipeLink}
+                title="Copy link to import into MacroFactor"
+                aria-label="Copy link to import into MacroFactor"
+                className="inline-flex items-center gap-2 rounded border border-mise-800 bg-mise-950/80 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                <Share2 size={14} />
+                Share to MacroFactor
+              </button>
+              <span
+                aria-live="polite"
+                className={`text-xs text-mise-500 transition-opacity duration-300 ${copyConfirmationVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+              >
+                Link copied!
+              </span>
             </>
           )}
         </div>

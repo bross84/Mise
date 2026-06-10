@@ -4,6 +4,11 @@
 
 - Prompt 18 — Serving scaler toggle polished (replaced checkboxes with a proper pill toggle) — completed by Claude Code.
 - Prompt 19 — Surprise Me button (Shuffle icon, navigates to random recipe, amber accent styling) — completed by Claude Code.
+- Added Schema.org Recipe JSON-LD to Recipe Detail for MacroFactor import, with cleanup on unmount and a Share to MacroFactor clipboard button in the top-right action row.
+- Refined Add Recipe unmatched ingredient flow to show only unmatched items, re-run matching for a single added ingredient, auto-hide panel when none remain, and added USDA/OFF source pills in search results.
+- Updated ingredient search dropdowns in Add Recipe and Ingredient Database to auto-search prefilled queries, support Enter-triggered search, and display per-serving macros while keeping saved values normalized per 100g.
+- Adjusted Add Recipe serving macro display precedence to use `serving_grams ?? serving_size_g ?? serving_size ?? amount_grams ?? 100` with explicit `(value / 100) * servingGrams` scaling.
+- Updated Add Recipe IngredientSearchPanel macro labels to use integer-rounded per-serving output via `Math.round` for calories/protein/carbs/fat.
 - Migrated frontend recipe and ingredient pages to the FastAPI client, added API env files, and removed mock data imports from the active pages.
 - Removed recipe description field usage from Add Recipe flow and mock recipe data; confirmed backend schema/model already have no description field.
 - Added a destructive Delete Recipe action in Recipe Detail with confirmation, API delete call, redirect to recipe list, and failure alert.
