@@ -14,6 +14,20 @@ Base = declarative_base()
 
 def create_tables():
     Base.metadata.create_all(bind=engine)
+    # Add incremental columns to existing DBs that predate the fields
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE ingredients ADD COLUMN source VARCHAR DEFAULT 'local'"))
+            conn.execute(text("UPDATE ingredients SET source = 'local' WHERE source IS NULL"))
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+        try:
+            conn.execute(text("ALTER TABLE ingredients ADD COLUMN barcode VARCHAR"))
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
 
 
 def get_db():

@@ -40,6 +40,10 @@ function formatScaledValue(value) {
 }
 
 function formatServingMacroLabel(result) {
+  if (result.source === 'openfoodfacts' && result.unit && /^per\s+\d/.test(String(result.unit))) {
+    return `${String(result.unit).replace('per', 'Per')}: ${formatScaledValue(result.calories)} cal · ${formatScaledValue(result.protein)}g protein · ${formatScaledValue(result.carbs)}g carbs · ${formatScaledValue(result.fat)}g fat`
+  }
+
   const servingGrams = getServingGrams(result)
   const factor = servingGrams / 100
 
@@ -58,6 +62,7 @@ function IngredientDatabase() {
   const [draft, setDraft] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [selectSaving, setSelectSaving] = useState(false)
 
   // Inline edit state
   const [editingId, setEditingId] = useState(null)
@@ -160,21 +165,43 @@ function IngredientDatabase() {
     clearTimeout(timerRef.current)
   }, [])
 
-  const handleSelectResult = (result) => {
+  const handleSelectResult = async (result) => {
     setDropdownOpen(false)
     setQuery(result.name)
-    setDraft({
-      name: result.name,
-      calories: String(result.calories),
-      protein: String(result.protein),
-      carbs: String(result.carbs),
-      fat: String(result.fat),
-    })
+    setApiResults([])
+
+    if (result.source === 'local') {
+      // Already in the local DB — just update the table filter
+      return
+    }
+
+    // External result: auto-save to local DB immediately
+    setSelectSaving(true)
+    setActionError('')
+    try {
+      await createIngredient({
+        name: result.name,
+        calories: result.calories,
+        protein: result.protein,
+        carbs: result.carbs,
+        fat: result.fat,
+        unit: result.unit || (result.serving_grams ? `per ${result.serving_grams}g` : 'per 100g'),
+        source: result.source === 'usda' ? 'usda' : 'off',
+        barcode: result.source === 'openfoodfacts' ? (result.barcode || null) : null,
+      })
+      await reloadIngredients()
+      setQuery('')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to save ingredient.')
+      await reloadIngredients()
+    } finally {
+      setSelectSaving(false)
+    }
   }
 
   const handleAddManually = () => {
     setDropdownOpen(false)
-    setDraft({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '' })
+    setDraft({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g' })
   }
 
   const handleClearDraft = () => {
@@ -195,7 +222,7 @@ function IngredientDatabase() {
         protein: Number(draft.protein) || 0,
         carbs: Number(draft.carbs) || 0,
         fat: Number(draft.fat) || 0,
-        unit: 'per 100g',
+        unit: draft.unit?.trim() || 'per 100g',
       })
       handleClearDraft()
       await reloadIngredients()
@@ -258,7 +285,7 @@ function IngredientDatabase() {
     <section className="mx-auto w-full max-w-7xl">
       <header>
         <h1 className="font-display text-3xl font-semibold text-mise-300">Ingredient Database</h1>
-        <p className="mt-2 text-sm text-mise-500">Search USDA or Open Food Facts (OFF) to add ingredients, or enter one manually.</p>
+        <p className="mt-2 text-sm text-mise-500">Search your local database first, or find ingredients from USDA / Open Food Facts — selecting an external result saves it locally.</p>
       </header>
 
       {/* Persistent search / add bar */}
@@ -285,13 +312,15 @@ function IngredientDatabase() {
           autoComplete="off"
           className="w-full rounded border border-mise-800 bg-mise-900 px-4 py-3 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
         />
-        {searching && (
-          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-mise-500">Searching…</span>
+        {(searching || selectSaving) && (
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-mise-500">
+            {selectSaving ? 'Saving…' : 'Searching…'}
+          </span>
         )}
 
         {/* API results dropdown */}
-        {dropdownOpen && apiResults.length > 0 && (
-          <ul className="absolute z-20 mt-1 w-full rounded border border-mise-800 bg-mise-900 shadow-xl">
+        {dropdownOpen && (apiResults.length > 0 || query.trim().length >= 2) && (
+          <ul className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded border border-mise-800 bg-mise-900 shadow-xl">
             {apiResults.map((result, i) => (
               <li key={i} className="border-b border-mise-800 last:border-none">
                 <button
@@ -300,25 +329,38 @@ function IngredientDatabase() {
                   onClick={() => handleSelectResult(result)}
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-mise-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
                 >
-                  <span className="flex-1 text-sm text-mise-300">{result.name}</span>
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="text-sm text-mise-300">{result.name}</span>
+                    {result.source === 'usda' && (
+                      <span className="shrink-0 rounded border border-sky-500/30 bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">USDA</span>
+                    )}
+                    {result.source === 'openfoodfacts' && (
+                      <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">OFF</span>
+                    )}
+                  </div>
                   <span className="shrink-0 text-xs text-mise-500">
                     {formatServingMacroLabel(result)}
                   </span>
                 </button>
               </li>
             ))}
-            {query.trim().length >= 2 && (
-              <li>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={handleAddManually}
-                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-mise-500 transition hover:bg-mise-800/60 focus-visible:outline-none"
-                >
-                  <span className="text-mise-400">Add &ldquo;{query.trim()}&rdquo; manually</span>
-                </button>
-              </li>
+            {searching && apiResults.length === 0 && (
+              <li className="px-4 py-3 text-xs text-mise-500">Searching…</li>
             )}
+            {!searching && apiResults.length === 0 && query.trim().length >= 2 && (
+              <li className="px-4 py-3 text-xs text-mise-500">No results found.</li>
+            )}
+            <li className="border-t border-mise-800">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleAddManually}
+                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm transition hover:bg-mise-800/60 focus-visible:outline-none"
+              >
+                <span className="text-mise-400">+ Add custom ingredient</span>
+                {query.trim() && <span className="text-mise-500">&ldquo;{query.trim()}&rdquo;</span>}
+              </button>
+            </li>
           </ul>
         )}
       </div>
@@ -333,8 +375,8 @@ function IngredientDatabase() {
           {actionError && (
             <p className="mb-3 text-xs text-rose-400">{actionError}</p>
           )}
-          <div className="grid gap-3 sm:grid-cols-5">
-            <div className="sm:col-span-1">
+          <div className="grid gap-3 sm:grid-cols-6">
+            <div className="sm:col-span-2">
               <label htmlFor="draft-name" className="mb-1 block text-xs text-mise-500">Name</label>
               <input
                 id="draft-name"
@@ -403,6 +445,17 @@ function IngredientDatabase() {
               />
             </div>
           </div>
+          <div className="mt-3">
+            <label htmlFor="draft-unit" className="mb-1 block text-xs text-mise-500">Serving Size</label>
+            <input
+              id="draft-unit"
+              type="text"
+              value={draft.unit ?? 'per 100g'}
+              onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))}
+              placeholder="e.g. per 100g, per 1 cup"
+              className={`${fieldCls} max-w-xs`}
+            />
+          </div>
           <div className="mt-3 flex items-center gap-3">
             <button
               type="submit"
@@ -432,7 +485,6 @@ function IngredientDatabase() {
         <table className="min-w-full divide-y divide-mise-800 text-left text-sm">
           <thead className="bg-mise-950/60 text-xs uppercase tracking-wide text-mise-500">
             <tr>
-              <th scope="col" className="px-4 py-3 font-medium">ID</th>
               <th scope="col" className="px-4 py-3 font-medium">Name</th>
               <th scope="col" className="px-4 py-3 font-medium">Calories</th>
               <th scope="col" className="px-4 py-3 font-medium">Protein</th>
@@ -445,11 +497,11 @@ function IngredientDatabase() {
           <tbody className="divide-y divide-mise-800 text-mise-300">
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-mise-500">Loading ingredients…</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-mise-500">Loading ingredients…</td>
               </tr>
             ) : filteredIngredients.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-mise-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-mise-500">
                   {query.trim() ? `No saved ingredients match "${query}".` : 'No ingredients yet.'}
                 </td>
               </tr>
@@ -457,7 +509,6 @@ function IngredientDatabase() {
               filteredIngredients.map((ingredient) => (
                 ingredient.id === editingId ? (
                   <tr key={ingredient.id} className="bg-mise-800/20">
-                    <td className="whitespace-nowrap px-4 py-2 text-mise-500 text-xs">{ingredient.id}</td>
                     <td className="px-2 py-1.5">
                       <input
                         type="text"
@@ -529,8 +580,28 @@ function IngredientDatabase() {
                   </tr>
                 ) : (
                   <tr key={ingredient.id} className="hover:bg-mise-800/30">
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-mise-500">{ingredient.id}</td>
-                    <td className="whitespace-nowrap px-4 py-3 font-medium text-mise-300">{ingredient.name}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {ingredient.source === 'off' && ingredient.barcode ? (
+                          <a
+                            href={`https://world.openfoodfacts.org/product/${ingredient.barcode}`}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="font-medium text-mise-300 underline-offset-2 hover:text-mise-200 hover:underline"
+                          >
+                            {ingredient.name}
+                          </a>
+                        ) : (
+                          <span className="font-medium text-mise-300">{ingredient.name}</span>
+                        )}
+                        {ingredient.source === 'usda' && (
+                          <span className="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-400">USDA</span>
+                        )}
+                        {ingredient.source === 'off' && (
+                          <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">OFF</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3">{ingredient.calories}</td>
                     <td className="whitespace-nowrap px-4 py-3">{ingredient.protein}</td>
                     <td className="whitespace-nowrap px-4 py-3">{ingredient.carbs}</td>

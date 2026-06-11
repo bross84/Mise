@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.ingredient import Ingredient
 from app.models.recipe import Recipe
 from app.schemas.recipe import RecipeCreate, RecipeUpdate, RecipeResponse
 from app.services.ai import AIService
@@ -137,6 +138,102 @@ async def match_ingredients(payload: MatchIngredientsRequest, db: Session = Depe
         match = await matcher.match(item.name, db)
         results.append(MatchResult(name=item.name, amount=item.amount, unit=item.unit, match=match))
     return MatchIngredientsResponse(results=results)
+
+
+_UNIT_TO_GRAMS: dict[str, float] = {
+    'g': 1.0, 'gram': 1.0, 'grams': 1.0,
+    'kg': 1000.0, 'kilogram': 1000.0, 'kilograms': 1000.0,
+    'oz': 28.35, 'ounce': 28.35, 'ounces': 28.35,
+    'lb': 453.6, 'pound': 453.6, 'pounds': 453.6,
+    'tsp': 4.0, 'teaspoon': 4.0, 'teaspoons': 4.0,
+    'tbsp': 12.0, 'tablespoon': 12.0, 'tablespoons': 12.0,
+    'cup': 240.0, 'cups': 240.0,
+    'ml': 1.0, 'milliliter': 1.0, 'milliliters': 1.0, 'millilitre': 1.0, 'millilitres': 1.0,
+}
+
+
+def _to_grams(amount: float, unit: str) -> float | None:
+    factor = _UNIT_TO_GRAMS.get(unit.lower().strip())
+    return None if factor is None else amount * factor
+
+
+class MacroValues(BaseModel):
+    calories: float
+    protein: float
+    carbs: float
+    fat: float
+
+
+class MacrosResponse(BaseModel):
+    per_serving: MacroValues
+    total: MacroValues
+    servings: int
+    matched_count: int
+    total_count: int
+
+
+@router.get("/{recipe_id}/macros", response_model=MacrosResponse)
+def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    ingredients = recipe.ingredients or []
+    servings = recipe.servings or 1
+    total_count = len(ingredients)
+    matched_count = 0
+    totals = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}
+
+    # Diagnostic: log stored fields on first ingredient so mismatches are visible in docker logs
+    if ingredients:
+        import sys
+        print(f"[macros] recipe {recipe_id} first ingredient keys: {list(ingredients[0].keys())}", file=sys.stderr, flush=True)
+
+    for ing in ingredients:
+        db_ing = None
+
+        # Path 1: numeric ingredient_id stored by the matching service
+        ing_id = ing.get("ingredient_id")
+        if ing_id:
+            db_ing = db.query(Ingredient).filter(Ingredient.id == int(ing_id)).first()
+
+        # Path 2: canonical name stored on the ingredient (matches exact DB name)
+        if db_ing is None:
+            ing_name = (ing.get("name") or "").strip()
+            if ing_name:
+                db_ing = (
+                    db.query(Ingredient)
+                    .filter(Ingredient.name.ilike(ing_name))
+                    .first()
+                )
+
+        if db_ing is None:
+            continue
+        if any(v is None for v in [db_ing.calories, db_ing.protein, db_ing.carbs, db_ing.fat]):
+            continue
+
+        amount = float(ing.get("amount") or 0)
+        unit = str(ing.get("unit") or "g")
+        grams = _to_grams(amount, unit)
+        if grams is None or grams <= 0:
+            continue
+
+        factor = grams / 100.0
+        totals["calories"] += db_ing.calories * factor
+        totals["protein"] += db_ing.protein * factor
+        totals["carbs"] += db_ing.carbs * factor
+        totals["fat"] += db_ing.fat * factor
+        matched_count += 1
+
+    per_serving = {k: v / servings for k, v in totals.items()}
+
+    return MacrosResponse(
+        per_serving=MacroValues(**{k: round(v, 1) for k, v in per_serving.items()}),
+        total=MacroValues(**{k: round(v, 1) for k, v in totals.items()}),
+        servings=servings,
+        matched_count=matched_count,
+        total_count=total_count,
+    )
 
 
 @router.get("", response_model=list[RecipeResponse])

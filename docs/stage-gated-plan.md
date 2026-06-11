@@ -1,5 +1,22 @@
 # Stage-Gated Plan
 
+## 2026-06-10
+
+### Stage: Implemented
+- Add Recipe unmatched Ingredient Matches list now removes an ingredient row immediately after accepting/saving a selected match.
+- Ingredient search response macros are now normalized to 1 decimal across local, USDA, and OFF payloads.
+- OFF results now preserve serving-level macros as provided (or derive per-serving values from 100g with serving grams), use serving-specific unit text (for example `per 63g`) for serving-based values, and carry barcode values through save flows.
+- Ingredient Database now links OFF ingredient names to Open Food Facts product pages when barcode is present; names stay plain text when barcode is absent.
+- Backend ingredient persistence now supports `barcode` (model/schema + SQLite migration) and backfills barcode onto existing idempotent matches when new OFF barcode data is supplied.
+- Add Recipe and Recipe Detail ingredient search empty-state actions were split into independent external actions: `Search USDA` and `Search Open Food Facts`, backed by source-specific external routing via `external_source`.
+- Added `Search by barcode` flow in both panels that switches the query input to numeric barcode mode and calls `https://us.openfoodfacts.org/api/v0/product/{barcode}.json` for direct product lookup.
+- Preserved existing selection behavior so choosing any USDA/OFF/barcode hit continues to save to local ingredients through the current auto-save path.
+- Ingredient search backend updated to support local-only queries (`include_external=false`) and to merge external results with USDA first, then OFF, deduplicated and capped.
+- Open Food Facts search host updated from `world.openfoodfacts.org` to `us.openfoodfacts.org`.
+- USDA search key handling updated to use environment keys (`USDA_API_KEY` or `FDC_API_KEY`) with `DEMO_KEY` fallback, fixing environments where demo rate limits suppressed USDA results.
+- Add Recipe ingredient search now checks local-only first and requires an explicit `No local results - search USDA & Open Food Facts?` action before external calls.
+- Recipe Detail edit mode now includes the same local-first ingredient search behavior with explicit external opt-in and preserved auto-save to local DB when using external results.
+
 ## 2026-06-09
 
 ### Stage: Implemented

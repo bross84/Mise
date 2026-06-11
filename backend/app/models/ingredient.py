@@ -13,4 +13,6 @@ class Ingredient(Base):
     carbs = Column(Float, nullable=False)
     fat = Column(Float, nullable=False)
     unit = Column(String, default="per 100g")
+    source = Column(String, default="local", server_default="local")
+    barcode = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -42,6 +42,10 @@ export function getRecipe(id) {
   return request(`/recipes/${encodeURIComponent(id)}`)
 }
 
+export function getRecipeMacros(id) {
+  return request(`/recipes/${encodeURIComponent(id)}/macros`)
+}
+
 export function createRecipe(data) {
   return request('/recipes', {
     method: 'POST',
@@ -80,8 +84,15 @@ export function getIngredients() {
   return request('/ingredients')
 }
 
-export function searchIngredients(q) {
-  return request(`/ingredients/search?q=${encodeURIComponent(q)}`)
+export function searchIngredients(q, { includeExternal = true, externalSource } = {}) {
+  const params = new URLSearchParams({ q: String(q ?? '') })
+  if (!includeExternal) {
+    params.set('include_external', 'false')
+  }
+  if (externalSource) {
+    params.set('external_source', String(externalSource))
+  }
+  return request(`/ingredients/search?${params.toString()}`)
 }
 
 export function createIngredient(data) {

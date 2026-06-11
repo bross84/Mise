@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Pencil, Share2, Star, Trash2, X } from 'lucide-react'
-import { deleteRecipe, getIngredients, getRecipe, updateRecipe } from '../api/client.js'
+import {
+  createIngredient,
+  deleteRecipe,
+  getIngredients,
+  getRecipe,
+  getRecipeMacros,
+  searchIngredients,
+  updateRecipe,
+} from '../api/client.js'
 
 const tagHeaderTheme = {
   beef: 'from-rose-900/60 via-slate-900 to-slate-950 bg-rose-900/30',
@@ -78,12 +86,327 @@ function StarRating() {
 const inputCls =
   'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
+function formatServingMacroLabel(result) {
+  const servingCandidate =
+    result.serving_grams ??
+    result.serving_size_g ??
+    result.serving_size ??
+    result.amount_grams ??
+    100
+  const numericServing = Number(servingCandidate)
+  const servingG = Number.isFinite(numericServing) && numericServing > 0 ? numericServing : 100
+  const scale = servingG / 100
+
+  return `Per ${servingG}g: ${Math.round((Number(result.calories) || 0) * scale)} cal · ${Math.round((Number(result.protein) || 0) * scale)}g protein · ${Math.round((Number(result.carbs) || 0) * scale)}g carbs · ${Math.round((Number(result.fat) || 0) * scale)}g fat`
+}
+
+function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
+  const [query, setQuery] = useState(ingredientName)
+  const [barcodeMode, setBarcodeMode] = useState(false)
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [searchedExternal, setSearchedExternal] = useState(false)
+  const [savingIndex, setSavingIndex] = useState(null)
+  const [error, setError] = useState('')
+  const timerRef = useRef(null)
+
+  const runSearch = (q, { immediate = false } = {}) => {
+    clearTimeout(timerRef.current)
+    setError('')
+    setSearchedExternal(false)
+    setBarcodeMode(false)
+    if (q.trim().length < 2) {
+      setResults([])
+      return
+    }
+    const execute = () => {
+      setSearching(true)
+      searchIngredients(q, { includeExternal: false })
+        .then((d) => setResults(d?.results ?? []))
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false))
+    }
+    if (immediate) {
+      execute()
+      return
+    }
+    timerRef.current = setTimeout(execute, 400)
+  }
+
+  useEffect(() => {
+    runSearch(ingredientName, { immediate: true })
+    return () => clearTimeout(timerRef.current)
+  }, [])
+
+  const handleSearchExternal = () => {
+    const trimmed = query.trim()
+    if (trimmed.length < 2) {
+      return
+    }
+    clearTimeout(timerRef.current)
+    setError('')
+    setSearchedExternal(true)
+    setSearching(true)
+    searchIngredients(trimmed)
+      .then((d) => setResults(d?.results ?? []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false))
+  }
+
+  const handleSearchUsda = () => {
+    const trimmed = query.trim()
+    if (trimmed.length < 2) {
+      return
+    }
+    clearTimeout(timerRef.current)
+    setError('')
+    setSearchedExternal(true)
+    setSearching(true)
+    searchIngredients(trimmed, { externalSource: 'usda' })
+      .then((d) => setResults(d?.results ?? []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false))
+  }
+
+  const handleSearchOpenFoodFacts = async () => {
+    const trimmed = query.trim()
+    if (trimmed.length < 2) {
+      return
+    }
+    clearTimeout(timerRef.current)
+    setError('')
+    setSearchedExternal(true)
+    setSearching(true)
+    try {
+      const url = new URL('https://us.openfoodfacts.org/cgi/search.pl')
+      url.searchParams.set('search_terms', trimmed)
+      url.searchParams.set('search_simple', '1')
+      url.searchParams.set('action', 'process')
+      url.searchParams.set('json', '1')
+      url.searchParams.set('page_size', '15')
+      const response = await fetch(url.toString())
+      if (!response.ok) {
+        throw new Error('Open Food Facts search failed.')
+      }
+      const data = await response.json()
+      const products = Array.isArray(data?.products) ? data.products : []
+      const offResults = products
+        .map((product) => {
+          const nutriments = product?.nutriments ?? {}
+          const name = (product?.product_name || product?.generic_name || '').trim()
+          if (!name) {
+            return null
+          }
+          const servingText = product?.serving_size ?? ''
+          const servingMatch = String(servingText).match(/([\d.]+)\s*g/i)
+          const servingGrams = servingMatch ? Number.parseFloat(servingMatch[1]) : null
+          return {
+            name,
+            calories: Number(nutriments['energy-kcal_100g'] ?? ((nutriments['energy_100g'] ?? 0) / 4.184)) || 0,
+            protein: Number(nutriments['proteins_100g'] ?? 0) || 0,
+            carbs: Number(nutriments['carbohydrates_100g'] ?? 0) || 0,
+            fat: Number(nutriments['fat_100g'] ?? 0) || 0,
+            source: 'openfoodfacts',
+            serving_grams: Number.isFinite(servingGrams) ? servingGrams : null,
+          }
+        })
+        .filter(Boolean)
+      setResults(offResults)
+    } catch {
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const handleSearchByBarcode = () => {
+    clearTimeout(timerRef.current)
+    setError('')
+    setResults([])
+    setSearchedExternal(false)
+    setBarcodeMode(true)
+  }
+
+  const handleBarcodeChange = async (e) => {
+    const next = e.target.value.replace(/\D/g, '')
+    setQuery(next)
+    setError('')
+    setSearchedExternal(true)
+    if (!next) {
+      setResults([])
+      return
+    }
+    setSearching(true)
+    try {
+      const response = await fetch(`https://us.openfoodfacts.org/api/v0/product/${next}.json`)
+      if (!response.ok) {
+        throw new Error('Barcode lookup failed.')
+      }
+      const data = await response.json()
+      if (data?.status !== 1 || !data?.product) {
+        setResults([])
+        return
+      }
+      const product = data.product
+      const nutriments = product?.nutriments ?? {}
+      const name = (product?.product_name || product?.generic_name || '').trim()
+      if (!name) {
+        setResults([])
+        return
+      }
+      const servingText = product?.serving_size ?? ''
+      const servingMatch = String(servingText).match(/([\d.]+)\s*g/i)
+      const servingGrams = servingMatch ? Number.parseFloat(servingMatch[1]) : null
+      setResults([{
+        name,
+        calories: Number(nutriments['energy-kcal_100g'] ?? ((nutriments['energy_100g'] ?? 0) / 4.184)) || 0,
+        protein: Number(nutriments['proteins_100g'] ?? 0) || 0,
+        carbs: Number(nutriments['carbohydrates_100g'] ?? 0) || 0,
+        fat: Number(nutriments['fat_100g'] ?? 0) || 0,
+        source: 'openfoodfacts',
+        serving_grams: Number.isFinite(servingGrams) ? servingGrams : null,
+      }])
+    } catch {
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const handleUse = async (result, index) => {
+    setSavingIndex(index)
+    setError('')
+    try {
+      const saved = await createIngredient({
+        name: result.name,
+        calories: Number(result.calories) || 0,
+        protein: Number(result.protein) || 0,
+        carbs: Number(result.carbs) || 0,
+        fat: Number(result.fat) || 0,
+        unit: result.serving_grams ? `per ${result.serving_grams}g` : (result.unit || 'per 100g'),
+        source: result.source === 'usda' ? 'usda' : (result.source === 'openfoodfacts' ? 'off' : 'local'),
+      })
+      onSelect(saved)
+      onClose()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Failed to use ingredient.')
+    } finally {
+      setSavingIndex(null)
+    }
+  }
+
+  return (
+    <div className="rounded border border-mise-700/60 bg-mise-950 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={query}
+            onChange={barcodeMode ? handleBarcodeChange : (e) => {
+              const q = e.target.value
+              setQuery(q)
+              runSearch(q)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                if (!barcodeMode) {
+                  runSearch(query, { immediate: true })
+                }
+              }
+            }}
+            inputMode={barcodeMode ? 'numeric' : undefined}
+            pattern={barcodeMode ? '[0-9]*' : undefined}
+            placeholder={barcodeMode ? 'Enter barcode number...' : 'Search ingredient'}
+            autoFocus
+            className={inputCls}
+          />
+          {searching && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-mise-500">Searching...</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded border border-mise-800 px-2.5 py-2 text-xs text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+        >
+          Close
+        </button>
+      </div>
+
+      {error && <p className="mb-2 text-xs text-rose-400">{error}</p>}
+
+      {results.length > 0 && (
+        <ul className="space-y-1">
+          {results.map((r, i) => (
+            <li
+              key={i}
+              onClick={() => handleUse(r, i)}
+              disabled={savingIndex !== null}
+              className="flex items-center gap-3 rounded border border-mise-800 bg-mise-900/60 px-3 py-2 cursor-pointer transition hover:bg-mise-900 hover:border-mise-700 disabled:opacity-50"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-mise-300">{r.name}</span>
+                  {r.source === 'usda' && (
+                    <span className="rounded-full border border-sky-500/30 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">USDA</span>
+                  )}
+                  {r.source === 'openfoodfacts' && (
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">OFF</span>
+                  )}
+                  {savingIndex === i && (
+                    <span className="text-[10px] text-mise-400">Selecting...</span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-mise-500">{formatServingMacroLabel(r)}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!searching && results.length === 0 && query.trim().length >= 2 && (
+        searchedExternal ? (
+          <p className="text-xs text-mise-500">No USDA or Open Food Facts results found.</p>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleSearchUsda}
+                className="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                Search USDA
+              </button>
+              <button
+                type="button"
+                onClick={handleSearchOpenFoodFacts}
+                className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                Search Open Food Facts
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleSearchByBarcode}
+              className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Search by barcode
+            </button>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 function makeDraftIngredient(values = {}) {
   return {
     id: values.id ?? `ing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: values.name ?? '',
     amount: values.amount ?? '',
     unit: values.unit ?? '',
+    ingredient_id: values.ingredient_id ?? null,
   }
 }
 
@@ -152,9 +475,12 @@ function RecipeDetail() {
   const [error, setError] = useState('')
 
   const [ingredientMap, setIngredientMap] = useState({})
+  const [macros, setMacros] = useState(null)
+  const [macroView, setMacroView] = useState('per-serving')
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(null)
+  const [openIngredientSearchId, setOpenIngredientSearchId] = useState(null)
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -168,7 +494,11 @@ function RecipeDetail() {
       try {
         setLoading(true)
         setError('')
-        const [data, ingredientList] = await Promise.all([getRecipe(id), getIngredients()])
+        const [data, ingredientList, macroData] = await Promise.all([
+          getRecipe(id),
+          getIngredients(),
+          getRecipeMacros(id).catch(() => null),
+        ])
 
         if (!active) {
           return
@@ -179,6 +509,7 @@ function RecipeDetail() {
           map[ing.id] = ing.name
         }
         setIngredientMap(map)
+        setMacros(macroData)
         setRecipe(data)
         setServings(data?.servings ?? 1)
       } catch (requestError) {
@@ -242,6 +573,18 @@ function RecipeDetail() {
     return servings / recipe.servings
   }, [recipe, mode, servings])
 
+  const displayMacros = useMemo(() => {
+    if (!macros || macros.matched_count === 0) return null
+    if (macroView === 'total') return macros.total
+    const divisor = servings > 0 ? servings : 1
+    return {
+      calories: macros.total.calories / divisor,
+      protein: macros.total.protein / divisor,
+      carbs: macros.total.carbs / divisor,
+      fat: macros.total.fat / divisor,
+    }
+  }, [macros, macroView, servings])
+
   const scaledIngredients = useMemo(() => {
     if (!recipe) return []
 
@@ -258,6 +601,7 @@ function RecipeDetail() {
 
   const handleEnterEdit = () => {
     setDraft(recipeToDraft(recipe))
+    setOpenIngredientSearchId(null)
     setTagInput('')
     setSaveError('')
     setEditing(true)
@@ -266,6 +610,7 @@ function RecipeDetail() {
   const handleCancelEdit = () => {
     setEditing(false)
     setDraft(null)
+    setOpenIngredientSearchId(null)
     setSaveError('')
   }
 
@@ -285,6 +630,7 @@ function RecipeDetail() {
           name: ing.name.trim(),
           amount: Number(ing.amount) || 0,
           unit: ing.unit.trim(),
+          ingredient_id: ing.ingredient_id ?? null,
         })),
       steps: draft.steps
         .filter((step) => step.title.trim() || step.content.trim() || step.timerSeconds)
@@ -578,8 +924,48 @@ function RecipeDetail() {
         <StarRating />
       </header>
 
+      {!editing && displayMacros && (
+        <div className="mt-6 rounded border border-theme bg-mise-900 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-6">
+              {[
+                { label: 'Calories', value: displayMacros.calories, unit: '' },
+                { label: 'Protein', value: displayMacros.protein, unit: 'g' },
+                { label: 'Carbs', value: displayMacros.carbs, unit: 'g' },
+                { label: 'Fat', value: displayMacros.fat, unit: 'g' },
+              ].map(({ label, value, unit }) => (
+                <div key={label}>
+                  <p className="text-base font-semibold text-mise-300">
+                    {Math.round(value)}{unit}
+                  </p>
+                  <p className="text-xs text-mise-500">{label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center rounded border border-mise-800 text-xs font-medium">
+              {[
+                { value: 'per-serving', label: 'Per Serving' },
+                { value: 'total', label: 'Total' },
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMacroView(value)}
+                  className={[
+                    'px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember first:rounded-l last:rounded-r',
+                    macroView === value ? 'bg-mise-800 text-mise-300' : 'text-mise-500 hover:text-mise-300',
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {!editing && (
-        <div className="mt-8 inline-flex items-center gap-4 rounded border border-theme bg-mise-900 px-4 py-3">
+        <div className="mt-6 inline-flex items-center gap-4 rounded border border-theme bg-mise-900 px-4 py-3">
           <div className="flex items-center gap-4" role="radiogroup" aria-label="Serving mode">
             {[
               { value: 'per-serving', label: 'Per Serving' },
@@ -662,6 +1048,7 @@ function RecipeDetail() {
                     type="text"
                     value={ing.name}
                     onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
+                    onFocus={() => setOpenIngredientSearchId(ing.id)}
                     placeholder="Name"
                     className={`${inputCls} col-span-5`}
                   />
@@ -699,6 +1086,24 @@ function RecipeDetail() {
                   >
                     <X size={15} />
                   </button>
+                  {openIngredientSearchId === ing.id && (
+                    <div className="col-span-12 mt-2">
+                      <IngredientSearchPanel
+                        ingredientName={ing.name}
+                        onClose={() => setOpenIngredientSearchId(null)}
+                        onSelect={(savedIngredient) => {
+                          setDraft((current) => ({
+                            ...current,
+                            ingredients: current.ingredients.map((item) => (
+                              item.id === ing.id
+                                ? { ...item, name: savedIngredient.name, ingredient_id: savedIngredient.id }
+                                : item
+                            )),
+                          }))
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

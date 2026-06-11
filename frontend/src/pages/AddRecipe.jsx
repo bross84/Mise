@@ -11,6 +11,47 @@ const primaryBtnCls =
 const secondaryBtnCls =
   'rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
+// ─── caret coordinate helper ────────────────────────────────────────────────
+
+function getCaretCoords(el, index) {
+  const style = window.getComputedStyle(el)
+  const mirror = document.createElement('div')
+
+  for (const prop of [
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'fontFamily', 'fontSize', 'fontStyle', 'fontWeight', 'lineHeight',
+    'letterSpacing', 'whiteSpace', 'wordWrap', 'width', 'tabSize',
+  ]) {
+    mirror.style[prop] = style[prop]
+  }
+
+  mirror.style.position = 'absolute'
+  mirror.style.visibility = 'hidden'
+  mirror.style.whiteSpace = 'pre-wrap'
+  mirror.style.wordBreak = 'break-word'
+  mirror.style.boxSizing = 'border-box'
+  mirror.style.top = '0'
+  mirror.style.left = '0'
+
+  const text = document.createTextNode(el.value.slice(0, index))
+  const marker = document.createElement('span')
+  marker.textContent = '​'
+  mirror.appendChild(text)
+  mirror.appendChild(marker)
+
+  document.body.appendChild(mirror)
+
+  const lineH = parseFloat(style.lineHeight) || 20
+  const coords = {
+    top: marker.offsetTop - el.scrollTop + lineH,
+    left: Math.min(marker.offsetLeft, el.clientWidth - 288),
+  }
+
+  document.body.removeChild(mirror)
+  return coords
+}
+
 // ─── markdown parser ─────────────────────────────────────────────────────────
 
 function parseMarkdownRecipe(md) {
@@ -107,6 +148,10 @@ function splitMarkdownRecipes(md) {
 }
 
 function formatServingMacroLabel(result) {
+  if (result.source === 'openfoodfacts' && result.unit && /^per\s+\d/.test(String(result.unit))) {
+    return `${result.unit.replace('per', 'Per')}: ${Math.round(Number(result.calories) || 0)} cal · ${Math.round(Number(result.protein) || 0)}g protein · ${Math.round(Number(result.carbs) || 0)}g carbs · ${Math.round(Number(result.fat) || 0)}g fat`
+  }
+
   const servingCandidate =
     result.serving_grams ??
     result.serving_size_g ??
@@ -123,24 +168,30 @@ function formatServingMacroLabel(result) {
 // ─── IngredientSearchPanel ────────────────────────────────────────────────────
 // Inline panel (not a dropdown) for searching USDA/OFF and adding an ingredient
 
-function IngredientSearchPanel({ ingredientName, onAdded, onClose }) {
+function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
   const [query, setQuery] = useState(ingredientName)
+  const [barcodeMode, setBarcodeMode] = useState(false)
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
+  const [searchedExternal, setSearchedExternal] = useState(false)
   const [savingIndex, setSavingIndex] = useState(null)
   const [error, setError] = useState('')
+  const [customDraft, setCustomDraft] = useState(null)
+  const [customSaving, setCustomSaving] = useState(false)
   const timerRef = useRef(null)
 
   const runSearch = (q, { immediate = false } = {}) => {
     clearTimeout(timerRef.current)
     setError('')
+    setSearchedExternal(false)
+    setBarcodeMode(false)
     if (q.trim().length < 2) {
       setResults([])
       return
     }
     const execute = () => {
       setSearching(true)
-      searchIngredients(q)
+      searchIngredients(q, { includeExternal: false })
         .then((d) => setResults(d?.results ?? []))
         .catch(() => setResults([]))
         .finally(() => setSearching(false))
@@ -161,22 +212,259 @@ function IngredientSearchPanel({ ingredientName, onAdded, onClose }) {
     runSearch(q)
   }
 
+  const handleSearchExternal = () => {
+    const trimmed = query.trim()
+    if (trimmed.length < 2) {
+      return
+    }
+    clearTimeout(timerRef.current)
+    setError('')
+    setSearchedExternal(true)
+    setSearching(true)
+    searchIngredients(trimmed)
+      .then((d) => setResults(d?.results ?? []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false))
+  }
+
+  const handleSearchUsda = () => {
+    const trimmed = query.trim()
+    if (trimmed.length < 2) {
+      return
+    }
+    clearTimeout(timerRef.current)
+    setError('')
+    setSearchedExternal(true)
+    setSearching(true)
+    searchIngredients(trimmed, { externalSource: 'usda' })
+      .then((d) => setResults(d?.results ?? []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false))
+  }
+
+  const handleSearchOpenFoodFacts = async () => {
+    const trimmed = query.trim()
+    if (trimmed.length < 2) {
+      return
+    }
+    clearTimeout(timerRef.current)
+    setError('')
+    setSearchedExternal(true)
+    setSearching(true)
+    try {
+      const url = new URL('https://us.openfoodfacts.org/cgi/search.pl')
+      url.searchParams.set('search_terms', trimmed)
+      url.searchParams.set('search_simple', '1')
+      url.searchParams.set('action', 'process')
+      url.searchParams.set('json', '1')
+      url.searchParams.set('page_size', '15')
+      const response = await fetch(url.toString())
+      if (!response.ok) {
+        throw new Error('Open Food Facts search failed.')
+      }
+      const data = await response.json()
+      const products = Array.isArray(data?.products) ? data.products : []
+      const offResults = products
+        .map((product) => {
+          const nutriments = product?.nutriments ?? {}
+          const name = (product?.product_name || product?.generic_name || '').trim()
+          if (!name) {
+            return null
+          }
+
+          const servingText = product?.serving_size ?? ''
+          const servingMatch = String(servingText).match(/([\d.]+)\s*g/i)
+          const servingGrams = servingMatch ? Number.parseFloat(servingMatch[1]) : null
+          const caloriesServing = nutriments['energy-kcal_serving']
+          const proteinServing = nutriments.proteins_serving
+          const carbsServing = nutriments.carbohydrates_serving
+          const fatServing = nutriments.fat_serving
+          const hasServingMacros =
+            caloriesServing != null ||
+            proteinServing != null ||
+            carbsServing != null ||
+            fatServing != null
+
+          let calories100g = Number(nutriments['energy-kcal_100g'])
+          if (!Number.isFinite(calories100g)) {
+            calories100g = Number(nutriments['energy_100g']) / 4.184
+          }
+          const protein100g = Number(nutriments.proteins_100g)
+          const carbs100g = Number(nutriments.carbohydrates_100g)
+          const fat100g = Number(nutriments.fat_100g)
+
+          let calories = 0
+          let protein = 0
+          let carbs = 0
+          let fat = 0
+          let unit = 'per 100g'
+
+          if (hasServingMacros) {
+            calories = Number(caloriesServing)
+            protein = Number(proteinServing)
+            carbs = Number(carbsServing)
+            fat = Number(fatServing)
+            if (servingGrams) {
+              unit = `per ${servingGrams}g`
+            }
+          } else if (servingGrams) {
+            const factor = servingGrams / 100
+            calories = (Number.isFinite(calories100g) ? calories100g : 0) * factor
+            protein = (Number.isFinite(protein100g) ? protein100g : 0) * factor
+            carbs = (Number.isFinite(carbs100g) ? carbs100g : 0) * factor
+            fat = (Number.isFinite(fat100g) ? fat100g : 0) * factor
+            unit = `per ${servingGrams}g`
+          } else {
+            calories = Number.isFinite(calories100g) ? calories100g : 0
+            protein = Number.isFinite(protein100g) ? protein100g : 0
+            carbs = Number.isFinite(carbs100g) ? carbs100g : 0
+            fat = Number.isFinite(fat100g) ? fat100g : 0
+          }
+
+          return {
+            name,
+            calories: Math.round(calories * 10) / 10,
+            protein: Math.round(protein * 10) / 10,
+            carbs: Math.round(carbs * 10) / 10,
+            fat: Math.round(fat * 10) / 10,
+            unit,
+            source: 'openfoodfacts',
+            serving_grams: Number.isFinite(servingGrams) ? servingGrams : null,
+            barcode: String(product?.code ?? '').trim() || null,
+          }
+        })
+        .filter(Boolean)
+      setResults(offResults)
+    } catch {
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const handleSearchByBarcode = () => {
+    clearTimeout(timerRef.current)
+    setError('')
+    setResults([])
+    setSearchedExternal(false)
+    setBarcodeMode(true)
+  }
+
+  const handleBarcodeChange = async (e) => {
+    const next = e.target.value.replace(/\D/g, '')
+    setQuery(next)
+    setError('')
+    setSearchedExternal(true)
+    if (!next) {
+      setResults([])
+      return
+    }
+    setSearching(true)
+    try {
+      const response = await fetch(`https://us.openfoodfacts.org/api/v0/product/${next}.json`)
+      if (!response.ok) {
+        throw new Error('Barcode lookup failed.')
+      }
+      const data = await response.json()
+      if (data?.status !== 1 || !data?.product) {
+        setResults([])
+        return
+      }
+      const product = data.product
+      const nutriments = product?.nutriments ?? {}
+      const name = (product?.product_name || product?.generic_name || '').trim()
+      if (!name) {
+        setResults([])
+        return
+      }
+      const servingText = product?.serving_size ?? ''
+      const servingMatch = String(servingText).match(/([\d.]+)\s*g/i)
+      const servingGrams = servingMatch ? Number.parseFloat(servingMatch[1]) : null
+      const caloriesServing = nutriments['energy-kcal_serving']
+      const proteinServing = nutriments.proteins_serving
+      const carbsServing = nutriments.carbohydrates_serving
+      const fatServing = nutriments.fat_serving
+      const hasServingMacros =
+        caloriesServing != null ||
+        proteinServing != null ||
+        carbsServing != null ||
+        fatServing != null
+
+      let calories100g = Number(nutriments['energy-kcal_100g'])
+      if (!Number.isFinite(calories100g)) {
+        calories100g = Number(nutriments['energy_100g']) / 4.184
+      }
+      const protein100g = Number(nutriments.proteins_100g)
+      const carbs100g = Number(nutriments.carbohydrates_100g)
+      const fat100g = Number(nutriments.fat_100g)
+
+      let calories = 0
+      let protein = 0
+      let carbs = 0
+      let fat = 0
+      let unit = 'per 100g'
+
+      if (hasServingMacros) {
+        calories = Number(caloriesServing)
+        protein = Number(proteinServing)
+        carbs = Number(carbsServing)
+        fat = Number(fatServing)
+        if (servingGrams) {
+          unit = `per ${servingGrams}g`
+        }
+      } else if (servingGrams) {
+        const factor = servingGrams / 100
+        calories = (Number.isFinite(calories100g) ? calories100g : 0) * factor
+        protein = (Number.isFinite(protein100g) ? protein100g : 0) * factor
+        carbs = (Number.isFinite(carbs100g) ? carbs100g : 0) * factor
+        fat = (Number.isFinite(fat100g) ? fat100g : 0) * factor
+        unit = `per ${servingGrams}g`
+      } else {
+        calories = Number.isFinite(calories100g) ? calories100g : 0
+        protein = Number.isFinite(protein100g) ? protein100g : 0
+        carbs = Number.isFinite(carbs100g) ? carbs100g : 0
+        fat = Number.isFinite(fat100g) ? fat100g : 0
+      }
+
+      setResults([{
+        name,
+        calories: Math.round(calories * 10) / 10,
+        protein: Math.round(protein * 10) / 10,
+        carbs: Math.round(carbs * 10) / 10,
+        fat: Math.round(fat * 10) / 10,
+        unit,
+        source: 'openfoodfacts',
+        serving_grams: Number.isFinite(servingGrams) ? servingGrams : null,
+        barcode: String(product?.code ?? '').trim() || null,
+      }])
+    } catch {
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
   const handleAdd = async (result, index) => {
     setSavingIndex(index)
     setError('')
     try {
-      await createIngredient({
-        name: result.name,
-        calories: result.calories,
-        protein: result.protein,
-        carbs: result.carbs,
-        fat: result.fat,
-        unit: 'per 100g',
-      })
-      const matchedNow = await onAdded()
-      if (matchedNow) {
-        onClose()
+      let saved
+      if (result.source === 'local') {
+        saved = { id: result.ingredient_id, name: result.name }
+      } else {
+        saved = await createIngredient({
+          name: result.name,
+          calories: result.calories,
+          protein: result.protein,
+          carbs: result.carbs,
+          fat: result.fat,
+          unit: result.unit || (result.serving_grams ? `per ${result.serving_grams}g` : 'per 100g'),
+          source: result.source === 'usda' ? 'usda' : 'off',
+          barcode: result.source === 'openfoodfacts' ? (result.barcode || null) : null,
+        })
       }
+      const matchedNow = await onSaved(saved)
+      if (matchedNow) onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add ingredient.')
     } finally {
@@ -189,13 +477,20 @@ function IngredientSearchPanel({ ingredientName, onAdded, onClose }) {
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="relative flex-1">
           <input
-            type="text"
+            type={barcodeMode ? 'text' : 'text'}
             value={query}
-            onChange={handleQueryChange}
+            onChange={barcodeMode ? handleBarcodeChange : handleQueryChange}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); runSearch(query, { immediate: true }) }
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                if (!barcodeMode) {
+                  runSearch(query, { immediate: true })
+                }
+              }
             }}
-            placeholder="Search USDA / Open Food Facts…"
+            inputMode={barcodeMode ? 'numeric' : undefined}
+            pattern={barcodeMode ? '[0-9]*' : undefined}
+            placeholder={barcodeMode ? 'Enter barcode number…' : 'Search ingredient'}
             autoFocus
             className="w-full rounded border border-mise-800 bg-mise-900 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           />
@@ -244,7 +539,122 @@ function IngredientSearchPanel({ ingredientName, onAdded, onClose }) {
       )}
 
       {!searching && results.length === 0 && query.trim().length >= 2 && (
-        <p className="text-xs text-mise-500">No results found.</p>
+        searchedExternal ? (
+          <p className="text-xs text-mise-500">No USDA or Open Food Facts results found.</p>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleSearchUsda}
+                className="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                Search USDA
+              </button>
+              <button
+                type="button"
+                onClick={handleSearchOpenFoodFacts}
+                className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                Search Open Food Facts
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleSearchByBarcode}
+              className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Search by barcode
+            </button>
+          </div>
+        )
+      )}
+
+      {customDraft === null ? (
+        <button
+          type="button"
+          onClick={() => setCustomDraft({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g' })}
+          className="mt-2 flex w-full items-center gap-2 rounded border border-mise-800 px-3 py-2 text-left text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+        >
+          + Add custom ingredient
+        </button>
+      ) : (
+        <div className="mt-2 rounded border border-mise-700/60 bg-mise-900/60 p-3">
+          <p className="mb-2 text-xs font-medium uppercase tracking-widest text-mise-500">Custom Ingredient</p>
+          {error && <p className="mb-2 text-xs text-rose-400">{error}</p>}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="col-span-2 sm:col-span-3">
+              <label className="mb-1 block text-xs text-mise-500">Name</label>
+              <input
+                type="text"
+                value={customDraft.name}
+                onChange={(e) => setCustomDraft((d) => ({ ...d, name: e.target.value }))}
+                placeholder="Name"
+                className="w-full rounded border border-mise-800 bg-mise-950 px-2 py-1.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              />
+            </div>
+            {[['calories', 'Calories'], ['protein', 'Protein (g)'], ['carbs', 'Carbs (g)'], ['fat', 'Fat (g)']].map(([field, label]) => (
+              <div key={field}>
+                <label className="mb-1 block text-xs text-mise-500">{label}</label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={customDraft[field]}
+                  onChange={(e) => setCustomDraft((d) => ({ ...d, [field]: e.target.value }))}
+                  className="w-full rounded border border-mise-800 bg-mise-950 px-2 py-1.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                />
+              </div>
+            ))}
+            <div>
+              <label className="mb-1 block text-xs text-mise-500">Serving Size</label>
+              <input
+                type="text"
+                value={customDraft.unit}
+                onChange={(e) => setCustomDraft((d) => ({ ...d, unit: e.target.value }))}
+                placeholder="per 100g"
+                className="w-full rounded border border-mise-800 bg-mise-950 px-2 py-1.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              />
+            </div>
+          </div>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              disabled={customSaving || !customDraft.name.trim()}
+              onClick={async () => {
+                setCustomSaving(true)
+                setError('')
+                try {
+                  const saved = await createIngredient({
+                    name: customDraft.name.trim(),
+                    calories: Number(customDraft.calories) || 0,
+                    protein: Number(customDraft.protein) || 0,
+                    carbs: Number(customDraft.carbs) || 0,
+                    fat: Number(customDraft.fat) || 0,
+                    unit: customDraft.unit?.trim() || 'per 100g',
+                  })
+                  const matchedNow = await onSaved(saved)
+                  if (matchedNow) onClose()
+                  else setCustomDraft(null)
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Failed to save ingredient.')
+                } finally {
+                  setCustomSaving(false)
+                }
+              }}
+              className="rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              {customSaving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomDraft(null)}
+              className="rounded border border-mise-800 px-3 py-1.5 text-xs text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -254,12 +664,18 @@ function IngredientSearchPanel({ ingredientName, onAdded, onClose }) {
 
 function MatchedIngredientList({ matchResults, onRerun }) {
   const [openSearch, setOpenSearch] = useState(null) // ingredient name with panel open
+  const [acceptedIndexes, setAcceptedIndexes] = useState([])
+
+  useEffect(() => {
+    setAcceptedIndexes([])
+  }, [matchResults])
 
   if (!matchResults) return null
 
   const unmatchedResults = matchResults
     .map((result, index) => ({ result, index }))
     .filter((entry) => !entry.result.match)
+    .filter((entry) => !acceptedIndexes.includes(entry.index))
 
   if (unmatchedResults.length === 0) return null
 
@@ -292,7 +708,13 @@ function MatchedIngredientList({ matchResults, onRerun }) {
                 <IngredientSearchPanel
                   ingredientName={r.name}
                   onClose={() => setOpenSearch(null)}
-                  onAdded={() => onRerun(i)}
+                  onSaved={async (saved) => {
+                    const matched = await onRerun(i, saved)
+                    if (matched) {
+                      setAcceptedIndexes((prev) => (prev.includes(i) ? prev : [...prev, i]))
+                    }
+                    return matched
+                  }}
                 />
               )}
             </li>
@@ -327,11 +749,12 @@ export default function AddRecipe() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
-  // Ingredient database for # autocomplete
+  // Ingredient database for @ autocomplete
   const [dbIngredients, setDbIngredients] = useState([])
   const [mentionQuery, setMentionQuery] = useState(null) // null = inactive
   const [mentionStart, setMentionStart] = useState(0)
   const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionCoords, setMentionCoords] = useState({ top: 0, left: 0 })
   const [ingredientOverrides, setIngredientOverrides] = useState({}) // name → ingredient_id
   const textareaRef = useRef(null)
 
@@ -472,14 +895,15 @@ export default function AddRecipe() {
 
   const selectMention = (ingredient) => {
     const value = tabs[activeTab] ?? ''
-    const cursorPos = textareaRef.current?.selectionStart ?? (mentionStart + (mentionQuery?.length ?? 0) + 1)
-    const newValue = value.slice(0, mentionStart) + ingredient.name + value.slice(cursorPos)
-    updateTab(newValue)
+    // end of @query = @ position + 1 (for @) + query length — never read from DOM
+    const endPos = mentionStart + 1 + (mentionQuery?.length ?? 0)
+    const newValue = value.slice(0, mentionStart) + ingredient.name + value.slice(endPos)
+    setTabs((prev) => prev.map((t, i) => (i === activeTab ? newValue : t)))
     setIngredientOverrides((prev) => ({ ...prev, [ingredient.name]: ingredient.id }))
     setMentionQuery(null)
+    const newCursor = mentionStart + ingredient.name.length
     setTimeout(() => {
       if (textareaRef.current) {
-        const newCursor = mentionStart + ingredient.name.length
         textareaRef.current.focus()
         textareaRef.current.setSelectionRange(newCursor, newCursor)
       }
@@ -492,18 +916,17 @@ export default function AddRecipe() {
 
     const pos = e.target.selectionStart
     const textBefore = value.slice(0, pos)
-    const lineStart = textBefore.lastIndexOf('\n') + 1
-    const hashIndex = textBefore.lastIndexOf('#')
+    const atIndex = textBefore.lastIndexOf('@')
 
     if (
-      hashIndex !== -1 &&
-      hashIndex >= lineStart &&
-      hashIndex > lineStart && // not at the very start of a line (would be a heading)
-      !textBefore.slice(hashIndex + 1).includes('\n')
+      atIndex !== -1 &&
+      !textBefore.slice(atIndex + 1).includes('\n') &&
+      !textBefore.slice(atIndex + 1).includes(' ')
     ) {
-      setMentionQuery(textBefore.slice(hashIndex + 1))
-      setMentionStart(hashIndex)
+      setMentionQuery(textBefore.slice(atIndex + 1))
+      setMentionStart(atIndex)
       setMentionIndex(0)
+      setMentionCoords(getCaretCoords(e.target, atIndex))
     } else {
       setMentionQuery(null)
     }
@@ -654,7 +1077,10 @@ export default function AddRecipe() {
           style={{ minHeight: '60vh', resize: 'vertical' }}
         />
         {mentionQuery !== null && mentionMatches.length > 0 && (
-          <ul className="absolute left-0 top-full z-30 mt-1 max-h-48 w-full overflow-y-auto rounded border border-mise-700 bg-mise-900 shadow-xl">
+          <ul
+            className="absolute z-30 max-h-48 w-72 overflow-y-auto rounded border border-mise-700 bg-mise-900 shadow-xl"
+            style={{ top: mentionCoords.top, left: mentionCoords.left }}
+          >
             {mentionMatches.map((ing, i) => (
               <li key={ing.id} className="border-b border-mise-800 last:border-none">
                 <button
@@ -667,7 +1093,7 @@ export default function AddRecipe() {
                 >
                   <span className="flex-1 text-mise-300">{ing.name}</span>
                   <span className="shrink-0 text-xs text-mise-500">
-                    {ing.calories} cal · {ing.protein}g p · {ing.carbs}g c · {ing.fat}g f
+                    {ing.calories} cal · {ing.protein}g p
                   </span>
                 </button>
               </li>
@@ -682,12 +1108,29 @@ export default function AddRecipe() {
       )}
       <MatchedIngredientList
         matchResults={matchResults?.[activeTab] ?? null}
-        onRerun={async (resultIndex) => {
+        onRerun={async (resultIndex, savedIngredient) => {
           if (resultIndex === undefined) {
             matchedOnceRef.current[activeTab] = false
             setMatchResults((prev) => { const n = prev ? [...prev] : []; n[activeTab] = null; return n })
             await runMatching(activeTab)
             return false
+          }
+
+          // If the caller already saved the ingredient and gave us its record,
+          // directly stamp the match — no need to re-run fuzzy matching.
+          if (savedIngredient?.id) {
+            setMatchResults((prev) => {
+              if (!prev?.[activeTab]) return prev
+              const next = [...prev]
+              const tabResults = [...next[activeTab]]
+              tabResults[resultIndex] = {
+                ...tabResults[resultIndex],
+                match: { ingredient_id: savedIngredient.id, name: savedIngredient.name, confidence: 100, score: 100 },
+              }
+              next[activeTab] = tabResults
+              return next
+            })
+            return true
           }
 
           const recipe = parseMarkdownRecipe(tabs[activeTab])

@@ -10,6 +10,8 @@ class IngredientBase(BaseModel):
     carbs: float
     fat: float
     unit: str = "per 100g"
+    source: str = "local"
+    barcode: Optional[str] = None
 
 
 class IngredientCreate(IngredientBase):
@@ -23,6 +25,8 @@ class IngredientUpdate(BaseModel):
     carbs: Optional[float] = None
     fat: Optional[float] = None
     unit: Optional[str] = None
+    source: Optional[str] = None
+    barcode: Optional[str] = None
 
 
 class IngredientResponse(IngredientBase):
