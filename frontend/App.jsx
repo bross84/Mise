@@ -135,7 +135,7 @@ function App() {
         <Routes>
           <Route path="/" element={<RecipeBrowser />} />
           <Route path="/recipe/:id" element={<RecipeDetail />} />
-          <Route path="/add" element={<AddRecipe />} />
+          <Route path="/add" element={<AddRecipe key={location.key} />} />
           <Route path="/ingredients" element={<IngredientDatabase />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

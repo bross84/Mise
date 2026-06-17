@@ -60,6 +60,13 @@ export function parseRecipe(data) {
   })
 }
 
+export function parseIngredients(text, recipeName) {
+  return request('/recipes/parse-ingredients', {
+    method: 'POST',
+    body: JSON.stringify({ text, recipe_name: recipeName || undefined }),
+  })
+}
+
 export function matchIngredients(ingredients) {
   return request('/recipes/match-ingredients', {
     method: 'POST',
@@ -111,6 +118,23 @@ export function updateIngredient(id, data) {
 
 export function deleteIngredient(id) {
   return request(`/ingredients/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function blockIngredient(data) {
+  return request('/ingredients/block', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export function getBlockedIngredients() {
+  return request('/ingredients/blocked')
+}
+
+export function deleteBlockedIngredient(id) {
+  return request(`/ingredients/blocked/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
 }

@@ -1,5 +1,19 @@
 # Stage-Gated Plan
 
+## 2026-06-16
+
+### Stage: Implemented
+- `/api/ingredients/search` now skips local DB lookup entirely when `external_source` is explicitly `usda` or `openfoodfacts`, and proceeds straight to the corresponding external provider fetch flow.
+- Add Recipe and Recipe Detail `Search USDA` / `Search Open Food Facts` actions now route through frontend `searchIngredients` to backend `/api/ingredients/search` with source-specific `external_source`, eliminating direct USDA/OFF domain fetches from these frontend pages.
+- `/api/ingredients/search` now performs a direct OFF barcode lookup (`/api/v0/product/{barcode}.json`) for 8-14 digit barcode queries when external lookup is active (or source is OFF), returning one parsed OFF result when found and empty results when not found, with no fallback to regular search.
+- OFF search result rows in Add Recipe, Recipe Detail, and Ingredient Database now include an OFF-only secondary metadata line showing serving text (`Per serving: {g}` or `Per 100g`) plus barcode when present; USDA result row presentation is unchanged.
+- Ingredient Database table redesigned to collapse macro details: main table rows show ingredient name (clickable to expand/collapse), source badge, calories, Edit, Delete; protein/carbs/fat/unit columns hidden by default; clicking name toggles expandable detail row below showing full macro data in muted style; only one row expanded at a time via `expandedId` state; edit mode spans full width with all fields visible in grid layout.
+- Add Recipe and Recipe Detail ingredient search panels now keep `Search USDA` and `Search Open Food Facts` available for repeat fresh searches even when results are present, and `Search by barcode` now triggers immediate OFF lookup from the current input value on click instead of waiting for input change.
+- Add Recipe and Recipe Detail ingredient search panel actions (`Search USDA`, `Search Open Food Facts`, `Search by barcode`) now render above the result list instead of below, with no change to search logic or result handling behavior.
+- Foodish-backed recipe images now load from server-side endpoints: startup migration adds `recipes.image_url` if absent, `/api/recipes/{id}/image` returns cached URLs or fetches and persists a category-matched Foodish image, `/api/recipes/{id}/image/clear` resets the stored URL, Recipe Browser cards show 160px thumbnails with skeleton/emoji fallback, and Recipe Detail shows a 240px hero banner with refresh cycling.
+- Auto-generated recipe tags added: `parse-ingredients` endpoint accepts optional `recipe_name` and fires two parallel DeepSeek calls (ingredient parsing + tag generation), returning `suggested_tags` (3-5 lowercase descriptors for cuisine, protein, dietary). AddRecipe.jsx auto-fills the Tags field from suggestions when the field is blank, leaving manually entered tags untouched. Image fetch logic updated to use up to 3 saved recipe tags as the loremflickr search query, falling back to single-keyword title mapping for older tagless recipes.
+- Because the Foodish host is suspended here, the backend image route now falls back to a generic free food image source when Foodish fetches fail, but still persists and serves the resulting `image_url` through the same API contract.
+
 ## 2026-06-10
 
 ### Stage: Implemented

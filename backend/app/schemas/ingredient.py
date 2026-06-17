@@ -12,6 +12,7 @@ class IngredientBase(BaseModel):
     unit: str = "per 100g"
     source: str = "local"
     barcode: Optional[str] = None
+    serving_grams: Optional[float] = None
 
 
 class IngredientCreate(IngredientBase):
@@ -27,6 +28,7 @@ class IngredientUpdate(BaseModel):
     unit: Optional[str] = None
     source: Optional[str] = None
     barcode: Optional[str] = None
+    serving_grams: Optional[float] = None
 
 
 class IngredientResponse(IngredientBase):

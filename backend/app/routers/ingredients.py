@@ -6,6 +6,7 @@ import httpx
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.ingredient import Ingredient
+from app.models.blocked_ingredient import BlockedIngredient
 from app.schemas.ingredient import IngredientCreate, IngredientUpdate, IngredientResponse
 
 router = APIRouter(prefix="/api/ingredients", tags=["ingredients"])
@@ -22,6 +23,23 @@ class SearchResult(BaseModel):
     serving_grams: float | None = None
     barcode: str | None = None
     ingredient_id: int | None = None
+    source_url: str | None = None
+    source_id: str | None = None
+
+
+class BlockRequest(BaseModel):
+    name: str
+    source: str
+    source_id: str
+
+
+class BlockedResponse(BaseModel):
+    id: int
+    name: str
+    source: str
+    source_id: str
+
+    model_config = {"from_attributes": True}
 
 
 class SearchResponse(BaseModel):
@@ -83,6 +101,7 @@ def _parse_usda(data: dict) -> list[SearchResult]:
     results = []
     for food in (data.get("foods") or [])[:15]:
         nutrients = {n["nutrientName"]: n.get("value", 0) for n in (food.get("foodNutrients") or [])}
+        fdc_id = str(food.get("fdcId") or "")
         results.append(SearchResult(
             name=food.get("description", "Unknown"),
             calories=_round(nutrients.get("Energy") or nutrients.get("Energy (Atwater General Factors)")),
@@ -91,6 +110,8 @@ def _parse_usda(data: dict) -> list[SearchResult]:
             fat=_round(nutrients.get("Total lipid (fat)")),
             source="usda",
             serving_grams=_usda_serving_grams(food),
+            source_id=fdc_id or None,
+            source_url=f"https://fdc.nal.usda.gov/food-details/{fdc_id}/nutrients" if fdc_id else None,
         ))
     return results
 
@@ -137,6 +158,7 @@ def _parse_off(data: dict) -> list[SearchResult]:
             fat = fat_100g
             unit = "per 100g"
 
+        barcode = str(product.get("code") or "").strip() or None
         results.append(SearchResult(
             name=name.strip(),
             calories=_round(calories),
@@ -146,7 +168,9 @@ def _parse_off(data: dict) -> list[SearchResult]:
             unit=unit,
             source="openfoodfacts",
             serving_grams=serving_grams,
-            barcode=str(product.get("code") or "").strip() or None,
+            barcode=barcode,
+            source_id=barcode,
+            source_url=f"https://world.openfoodfacts.org/product/{barcode}" if barcode else None,
         ))
     return results
 
@@ -161,44 +185,68 @@ async def search_ingredients(
     if not q.strip():
         return SearchResponse(results=[])
 
-    # Local DB first — candidate fetch via any-word ilike, then quality-filtered
-    from sqlalchemy import or_
-    from rapidfuzz import fuzz as _fuzz
+    blocked_rows = db.query(BlockedIngredient).all()
+    blocked_set: set[tuple[str, str]] = {(b.source, b.source_id) for b in blocked_rows}
 
-    query_words = set(q.strip().lower().split())
-    search_terms = list(query_words)
-    filters = [Ingredient.name.ilike(f"%{term}%") for term in search_terms if term]
-    query_obj = db.query(Ingredient)
-    if filters:
-        query_obj = query_obj.filter(or_(*filters))
-    candidates = query_obj.order_by(Ingredient.name.asc()).limit(50).all()
+    def _filter_blocked(results: list[SearchResult]) -> list[SearchResult]:
+        return [r for r in results if not (r.source_id and (r.source, r.source_id) in blocked_set)]
 
-    def _local_quality(name: str) -> bool:
-        nl = name.lower()
-        # Require ≥60% of query words to appear in the ingredient name
-        name_words = set(nl.split())
-        if query_words and len(query_words & name_words) / len(query_words) >= 0.6:
-            return True
-        # Fallback: fuzzy similarity ≥70
-        return _fuzz.WRatio(q.strip().lower(), nl) >= 70
+    query_text = q.strip()
+    is_barcode = query_text.isdigit() and 8 <= len(query_text) <= 14 and " " not in q
+    if is_barcode and (external_source == "openfoodfacts" or include_external):
+        off_product_url = f"https://us.openfoodfacts.org/api/v0/product/{query_text}.json"
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(off_product_url)
+            if response.status_code != 200:
+                return SearchResponse(results=[])
+            data = response.json()
+            if data.get("status") != 1 or not data.get("product"):
+                return SearchResponse(results=[])
+            parsed = _filter_blocked(_parse_off({"products": [data["product"]]}))
+            return SearchResponse(results=parsed[:1])
+        except Exception:
+            return SearchResponse(results=[])
 
-    local_rows = [r for r in candidates if _local_quality(r.name)][:15]
+    if external_source not in ("usda", "openfoodfacts"):
+        # Local DB first — candidate fetch via any-word ilike, then quality-filtered
+        from sqlalchemy import or_
+        from rapidfuzz import fuzz as _fuzz
 
-    if local_rows:
-        return SearchResponse(results=[
-            SearchResult(
-                name=row.name,
-                calories=_round(row.calories),
-                protein=_round(row.protein),
-                carbs=_round(row.carbs),
-                fat=_round(row.fat),
-                unit=row.unit,
-                source="local",
-                barcode=row.barcode,
-                ingredient_id=row.id,
-            )
-            for row in local_rows
-        ])
+        query_words = set(q.strip().lower().split())
+        search_terms = list(query_words)
+        filters = [Ingredient.name.ilike(f"%{term}%") for term in search_terms if term]
+        query_obj = db.query(Ingredient)
+        if filters:
+            query_obj = query_obj.filter(or_(*filters))
+        candidates = query_obj.order_by(Ingredient.name.asc()).limit(50).all()
+
+        def _local_quality(name: str) -> bool:
+            nl = name.lower()
+            # Require ≥60% of query words to appear in the ingredient name
+            name_words = set(nl.split())
+            if query_words and len(query_words & name_words) / len(query_words) >= 0.6:
+                return True
+            # Fallback: fuzzy similarity ≥70
+            return _fuzz.WRatio(q.strip().lower(), nl) >= 70
+
+        local_rows = [r for r in candidates if _local_quality(r.name)][:15]
+
+        if local_rows:
+            return SearchResponse(results=_filter_blocked([
+                SearchResult(
+                    name=row.name,
+                    calories=_round(row.calories),
+                    protein=_round(row.protein),
+                    carbs=_round(row.carbs),
+                    fat=_round(row.fat),
+                    unit=row.unit,
+                    source="local",
+                    barcode=row.barcode,
+                    ingredient_id=row.id,
+                )
+                for row in local_rows
+            ]))
 
     if not include_external:
         return SearchResponse(results=[])
@@ -233,9 +281,9 @@ async def search_ingredients(
             pass
 
     if external_source == "usda":
-        return SearchResponse(results=usda_results[:15])
+        return SearchResponse(results=_filter_blocked(usda_results)[:15])
     if external_source == "openfoodfacts":
-        return SearchResponse(results=off_results[:15])
+        return SearchResponse(results=_filter_blocked(off_results)[:15])
 
     # USDA first, then OFF; dedup by normalised name, cap at 15
     seen: set[str] = set()
@@ -249,7 +297,37 @@ async def search_ingredients(
         if len(merged) == 15:
             break
 
-    return SearchResponse(results=merged)
+    return SearchResponse(results=_filter_blocked(merged))
+
+
+@router.post("/block", response_model=BlockedResponse, status_code=201)
+def block_ingredient(data: BlockRequest, db: Session = Depends(get_db)):
+    existing = db.query(BlockedIngredient).filter(
+        BlockedIngredient.source == data.source,
+        BlockedIngredient.source_id == data.source_id,
+    ).first()
+    if existing:
+        return existing
+    blocked = BlockedIngredient(name=data.name, source=data.source, source_id=data.source_id)
+    db.add(blocked)
+    db.commit()
+    db.refresh(blocked)
+    return blocked
+
+
+@router.get("/blocked", response_model=list[BlockedResponse])
+def list_blocked(db: Session = Depends(get_db)):
+    return db.query(BlockedIngredient).order_by(BlockedIngredient.created_at.desc()).all()
+
+
+@router.delete("/blocked/{blocked_id}")
+def unblock_ingredient(blocked_id: int, db: Session = Depends(get_db)):
+    blocked = db.query(BlockedIngredient).filter(BlockedIngredient.id == blocked_id).first()
+    if not blocked:
+        raise HTTPException(status_code=404, detail="Blocked ingredient not found")
+    db.delete(blocked)
+    db.commit()
+    return {"deleted": True}
 
 
 @router.get("", response_model=list[IngredientResponse])

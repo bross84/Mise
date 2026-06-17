@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Pencil, Share2, Star, Trash2, X } from 'lucide-react'
+import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import {
+  blockIngredient,
   createIngredient,
   deleteRecipe,
   getIngredients,
@@ -10,28 +12,6 @@ import {
   searchIngredients,
   updateRecipe,
 } from '../api/client.js'
-
-const tagHeaderTheme = {
-  beef: 'from-rose-900/60 via-slate-900 to-slate-950 bg-rose-900/30',
-  mexican: 'from-amber-900/60 via-slate-900 to-slate-950 bg-amber-900/25',
-  'high protein': 'from-sky-900/60 via-slate-900 to-slate-950 bg-sky-900/25',
-  fish: 'from-cyan-900/60 via-slate-900 to-slate-950 bg-cyan-900/25',
-  mediterranean: 'from-emerald-900/60 via-slate-900 to-slate-950 bg-emerald-900/25',
-  'meal prep': 'from-indigo-900/60 via-slate-900 to-slate-950 bg-indigo-900/25',
-  vegetarian: 'from-lime-900/60 via-slate-900 to-slate-950 bg-lime-900/25',
-  indian: 'from-orange-900/60 via-slate-900 to-slate-950 bg-orange-900/25',
-  'one pot': 'from-violet-900/60 via-slate-900 to-slate-950 bg-violet-900/25',
-  turkey: 'from-red-900/60 via-slate-900 to-slate-950 bg-red-900/25',
-  breakfast: 'from-yellow-900/60 via-slate-900 to-slate-950 bg-yellow-900/20',
-}
-
-function getHeaderTheme(firstTag) {
-  if (!firstTag) {
-    return 'from-slate-800 via-slate-900 to-slate-950 bg-mise-800/40'
-  }
-
-  return tagHeaderTheme[firstTag.toLowerCase()] || 'from-slate-800 via-slate-900 to-slate-950 bg-mise-800/40'
-}
 
 function formatScaledAmount(amount) {
   if (Number.isInteger(amount)) {
@@ -86,6 +66,103 @@ function StarRating() {
 const inputCls =
   'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
+
+function RecipeHeroImage({ recipeId, title }) {
+  const [imageUrl, setImageUrl] = useState(null)
+  const [loadingImage, setLoadingImage] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  useEffect(() => {
+    if (!recipeId) return undefined
+    let active = true
+
+    async function loadImage() {
+      try {
+        if (active) setLoadingImage(true)
+
+        const response = await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image`)
+        if (!response.ok) throw new Error(`Image request failed with status ${response.status}`)
+
+        const data = await response.json()
+        if (active) setImageUrl(data?.image_url ?? null)
+      } catch {
+        if (active) setImageUrl(null)
+      } finally {
+        if (active) {
+          setLoadingImage(false)
+          setRefreshing(false)
+        }
+      }
+    }
+
+    void loadImage()
+    return () => { active = false }
+  }, [recipeId])
+
+  const handleRefresh = () => {
+    if (refreshing || loadingImage) return
+    setRefreshing(true)
+
+    let active = true
+    async function doRefresh() {
+      try {
+        setLoadingImage(true)
+        await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image/clear`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+        })
+
+        const response = await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image`)
+        if (!response.ok) throw new Error(`Image request failed with status ${response.status}`)
+
+        const data = await response.json()
+        if (active) setImageUrl(data?.image_url ?? null)
+      } catch {
+        if (active) setImageUrl(null)
+      } finally {
+        if (active) {
+          setLoadingImage(false)
+          setRefreshing(false)
+        }
+      }
+    }
+
+    void doRefresh()
+    return () => { active = false }
+  }
+
+  return (
+    <div className="relative mt-6 h-[240px] w-full overflow-hidden rounded border border-theme bg-mise-900">
+      {loadingImage ? (
+        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-mise-800 via-mise-700/70 to-mise-800" />
+      ) : imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={`Recipe image for ${title}`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={() => setImageUrl(null)}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center bg-mise-900 text-5xl text-mise-500">
+          <span aria-hidden="true">🍽️</span>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleRefresh}
+        disabled={loadingImage || refreshing}
+        className="absolute right-2 top-2 rounded-full border border-mise-800/70 bg-mise-950/50 p-2 text-mise-400 shadow-sm backdrop-blur transition hover:border-mise-700 hover:bg-mise-950/70 hover:text-mise-200 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+        aria-label="Refresh recipe image"
+      >
+        <span aria-hidden="true">🔄</span>
+      </button>
+    </div>
+  )
+}
+
 function formatServingMacroLabel(result) {
   const servingCandidate =
     result.serving_grams ??
@@ -100,6 +177,28 @@ function formatServingMacroLabel(result) {
   return `Per ${servingG}g: ${Math.round((Number(result.calories) || 0) * scale)} cal · ${Math.round((Number(result.protein) || 0) * scale)}g protein · ${Math.round((Number(result.carbs) || 0) * scale)}g carbs · ${Math.round((Number(result.fat) || 0) * scale)}g fat`
 }
 
+function toTitleCase(str) {
+  return String(str ?? '').replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+}
+
+function formatOffServingText(result) {
+  const servingCandidates = [
+    result.serving_grams,
+    result.serving_size_g,
+    result.serving_size,
+    result.amount_grams,
+  ]
+
+  for (const candidate of servingCandidates) {
+    const numeric = Number(candidate)
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return `Per serving: ${numeric}g`
+    }
+  }
+
+  return 'Per 100g'
+}
+
 function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
   const [query, setQuery] = useState(ingredientName)
   const [barcodeMode, setBarcodeMode] = useState(false)
@@ -109,6 +208,16 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
   const [savingIndex, setSavingIndex] = useState(null)
   const [error, setError] = useState('')
   const timerRef = useRef(null)
+
+  const handleBlock = async (result, i) => {
+    if (!result.source_id) return
+    setResults((prev) => prev.filter((_, idx) => idx !== i))
+    try {
+      await blockIngredient({ name: result.name, source: result.source, source_id: result.source_id })
+    } catch {
+      // optimistic removal stands
+    }
+  }
 
   const runSearch = (q, { immediate = false } = {}) => {
     clearTimeout(timerRef.current)
@@ -162,13 +271,13 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
     setError('')
     setSearchedExternal(true)
     setSearching(true)
-    searchIngredients(trimmed, { externalSource: 'usda' })
+    searchIngredients(trimmed, { includeExternal: true, externalSource: 'usda' })
       .then((d) => setResults(d?.results ?? []))
       .catch(() => setResults([]))
       .finally(() => setSearching(false))
   }
 
-  const handleSearchOpenFoodFacts = async () => {
+  const handleSearchOpenFoodFacts = () => {
     const trimmed = query.trim()
     if (trimmed.length < 2) {
       return
@@ -177,58 +286,14 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
     setError('')
     setSearchedExternal(true)
     setSearching(true)
-    try {
-      const url = new URL('https://us.openfoodfacts.org/cgi/search.pl')
-      url.searchParams.set('search_terms', trimmed)
-      url.searchParams.set('search_simple', '1')
-      url.searchParams.set('action', 'process')
-      url.searchParams.set('json', '1')
-      url.searchParams.set('page_size', '15')
-      const response = await fetch(url.toString())
-      if (!response.ok) {
-        throw new Error('Open Food Facts search failed.')
-      }
-      const data = await response.json()
-      const products = Array.isArray(data?.products) ? data.products : []
-      const offResults = products
-        .map((product) => {
-          const nutriments = product?.nutriments ?? {}
-          const name = (product?.product_name || product?.generic_name || '').trim()
-          if (!name) {
-            return null
-          }
-          const servingText = product?.serving_size ?? ''
-          const servingMatch = String(servingText).match(/([\d.]+)\s*g/i)
-          const servingGrams = servingMatch ? Number.parseFloat(servingMatch[1]) : null
-          return {
-            name,
-            calories: Number(nutriments['energy-kcal_100g'] ?? ((nutriments['energy_100g'] ?? 0) / 4.184)) || 0,
-            protein: Number(nutriments['proteins_100g'] ?? 0) || 0,
-            carbs: Number(nutriments['carbohydrates_100g'] ?? 0) || 0,
-            fat: Number(nutriments['fat_100g'] ?? 0) || 0,
-            source: 'openfoodfacts',
-            serving_grams: Number.isFinite(servingGrams) ? servingGrams : null,
-          }
-        })
-        .filter(Boolean)
-      setResults(offResults)
-    } catch {
-      setResults([])
-    } finally {
-      setSearching(false)
-    }
+    searchIngredients(trimmed, { includeExternal: true, externalSource: 'openfoodfacts' })
+      .then((d) => setResults(d?.results ?? []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false))
   }
 
-  const handleSearchByBarcode = () => {
-    clearTimeout(timerRef.current)
-    setError('')
-    setResults([])
-    setSearchedExternal(false)
-    setBarcodeMode(true)
-  }
-
-  const handleBarcodeChange = async (e) => {
-    const next = e.target.value.replace(/\D/g, '')
+  const runBarcodeLookup = (rawValue) => {
+    const next = String(rawValue ?? '').replace(/\D/g, '')
     setQuery(next)
     setError('')
     setSearchedExternal(true)
@@ -237,40 +302,20 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
       return
     }
     setSearching(true)
-    try {
-      const response = await fetch(`https://us.openfoodfacts.org/api/v0/product/${next}.json`)
-      if (!response.ok) {
-        throw new Error('Barcode lookup failed.')
-      }
-      const data = await response.json()
-      if (data?.status !== 1 || !data?.product) {
-        setResults([])
-        return
-      }
-      const product = data.product
-      const nutriments = product?.nutriments ?? {}
-      const name = (product?.product_name || product?.generic_name || '').trim()
-      if (!name) {
-        setResults([])
-        return
-      }
-      const servingText = product?.serving_size ?? ''
-      const servingMatch = String(servingText).match(/([\d.]+)\s*g/i)
-      const servingGrams = servingMatch ? Number.parseFloat(servingMatch[1]) : null
-      setResults([{
-        name,
-        calories: Number(nutriments['energy-kcal_100g'] ?? ((nutriments['energy_100g'] ?? 0) / 4.184)) || 0,
-        protein: Number(nutriments['proteins_100g'] ?? 0) || 0,
-        carbs: Number(nutriments['carbohydrates_100g'] ?? 0) || 0,
-        fat: Number(nutriments['fat_100g'] ?? 0) || 0,
-        source: 'openfoodfacts',
-        serving_grams: Number.isFinite(servingGrams) ? servingGrams : null,
-      }])
-    } catch {
-      setResults([])
-    } finally {
-      setSearching(false)
-    }
+    searchIngredients(next, { includeExternal: true, externalSource: 'openfoodfacts' })
+      .then((d) => setResults(d?.results ?? []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false))
+  }
+
+  const handleSearchByBarcode = () => {
+    clearTimeout(timerRef.current)
+    setBarcodeMode(true)
+    runBarcodeLookup(query)
+  }
+
+  const handleBarcodeChange = (e) => {
+    runBarcodeLookup(e.target.value)
   }
 
   const handleUse = async (result, index) => {
@@ -324,6 +369,14 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
           {searching && (
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-mise-500">Searching...</span>
           )}
+          {!searching && (results.length > 0 || searchedExternal) && (
+            <button
+              type="button"
+              onClick={() => { setQuery(''); setResults([]); setSearchedExternal(false); setError(''); setBarcodeMode(false) }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 text-xs text-mise-500 transition hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              aria-label="Clear search"
+            >×</button>
+          )}
         </div>
         <button
           type="button"
@@ -336,18 +389,52 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
 
       {error && <p className="mb-2 text-xs text-rose-400">{error}</p>}
 
+      {!searching && !barcodeMode && query.trim().length >= 2 && (
+        <div className="space-y-2">
+          {searchedExternal && results.length === 0 && (
+            <p className="text-xs text-mise-500">No USDA or Open Food Facts results found.</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSearchUsda}
+              className="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Search USDA
+            </button>
+            <button
+              type="button"
+              onClick={handleSearchOpenFoodFacts}
+              className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Search Open Food Facts
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleSearchByBarcode}
+            className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          >
+            Search by barcode
+          </button>
+        </div>
+      )}
+
       {results.length > 0 && (
         <ul className="space-y-1">
           {results.map((r, i) => (
             <li
               key={i}
-              onClick={() => handleUse(r, i)}
-              disabled={savingIndex !== null}
-              className="flex items-center gap-3 rounded border border-mise-800 bg-mise-900/60 px-3 py-2 cursor-pointer transition hover:bg-mise-900 hover:border-mise-700 disabled:opacity-50"
+              className="flex items-center gap-3 rounded border border-mise-800 bg-mise-900/60 px-3 py-2"
             >
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 cursor-pointer" onClick={() => handleUse(r, i)}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-mise-300">{r.name}</span>
+                  <span className="text-sm text-mise-300">{toTitleCase(r.name)}</span>
+                  {r.source_url && (
+                    <a href={r.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-mise-600 hover:text-mise-400" title="View source">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    </a>
+                  )}
                   {r.source === 'usda' && (
                     <span className="rounded-full border border-sky-500/30 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">USDA</span>
                   )}
@@ -358,46 +445,40 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
                     <span className="text-[10px] text-mise-400">Selecting...</span>
                   )}
                 </div>
+                {r.source === 'openfoodfacts' && (
+                  <p className="mt-0.5 text-[11px] text-mise-500">
+                    <span>{formatOffServingText(r)}</span>
+                    {r.barcode && <span className="ml-2 text-mise-600">Barcode: {r.barcode}</span>}
+                  </p>
+                )}
                 <p className="mt-0.5 text-xs text-mise-500">{formatServingMacroLabel(r)}</p>
               </div>
+              {r.source_id && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleBlock(r, i) }}
+                  className="shrink-0 rounded border border-mise-800 px-2 py-1.5 text-[10px] text-mise-500 transition hover:border-rose-500/40 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                  title="Block this result"
+                >
+                  Block
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
-
-      {!searching && results.length === 0 && query.trim().length >= 2 && (
-        searchedExternal ? (
-          <p className="text-xs text-mise-500">No USDA or Open Food Facts results found.</p>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleSearchUsda}
-                className="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                Search USDA
-              </button>
-              <button
-                type="button"
-                onClick={handleSearchOpenFoodFacts}
-                className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                Search Open Food Facts
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={handleSearchByBarcode}
-              className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-            >
-              Search by barcode
-            </button>
-          </div>
-        )
-      )}
     </div>
   )
+}
+
+function stepsToInstructions(steps) {
+  if (!steps || steps.length === 0) return ''
+  return steps.map((step, i) => {
+    const title = step.title?.trim()
+    const content = step.content?.trim()
+    if (title && content) return `${i + 1}. ${title}\n${content}`
+    return `${i + 1}. ${title || content || ''}`
+  }).join('\n\n').trim()
 }
 
 function makeDraftIngredient(values = {}) {
@@ -410,23 +491,15 @@ function makeDraftIngredient(values = {}) {
   }
 }
 
-function makeDraftStep(values = {}) {
-  return {
-    id: values.id ?? `step-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    title: values.title ?? '',
-    content: values.content ?? '',
-    timerSeconds: values.timer_seconds != null ? String(values.timer_seconds) : '',
-  }
-}
-
 function recipeToDraft(recipe) {
   return {
     title: recipe.title ?? '',
     servings: recipe.servings ?? 1,
     tags: Array.isArray(recipe.tags) ? [...recipe.tags] : [],
     notes: recipe.notes ?? '',
+    instructions: recipe.instructions ?? stepsToInstructions(recipe.steps ?? []),
+    source_url: recipe.source_url ?? '',
     ingredients: (recipe.ingredients ?? []).map(makeDraftIngredient),
-    steps: (recipe.steps ?? []).map(makeDraftStep),
   }
 }
 
@@ -476,7 +549,7 @@ function RecipeDetail() {
 
   const [ingredientMap, setIngredientMap] = useState({})
   const [macros, setMacros] = useState(null)
-  const [macroView, setMacroView] = useState('per-serving')
+  const [macroView, setMacroView] = useState('total')
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(null)
@@ -560,8 +633,6 @@ function RecipeDetail() {
     }
   }, [])
 
-  const headerTheme = getHeaderTheme(recipe?.tags?.[0])
-
   const handleModeChange = (nextMode) => {
     setMode(nextMode)
     setServings(recipe?.servings ?? 1)
@@ -587,7 +658,10 @@ function RecipeDetail() {
 
   const scaledIngredients = useMemo(() => {
     if (!recipe) return []
-
+    const bdMap = {}
+    for (const entry of (macros?.breakdown ?? [])) {
+      if (entry.recipe_ingredient_id) bdMap[entry.recipe_ingredient_id] = entry
+    }
     return (recipe.ingredients ?? []).map((ingredient) => ({
       ...ingredient,
       scaledAmount: formatScaledAmount(Number(ingredient.amount) * ingredientFactor),
@@ -596,8 +670,9 @@ function RecipeDetail() {
           ? ingredientMap[ingredient.ingredient_id]
           : ingredient.name,
       linkedToDb: Boolean(ingredient.ingredient_id),
+      breakdown: bdMap[ingredient.id] ?? null,
     }))
-  }, [recipe, ingredientFactor, ingredientMap])
+  }, [recipe, ingredientFactor, ingredientMap, macros])
 
   const handleEnterEdit = () => {
     setDraft(recipeToDraft(recipe))
@@ -623,6 +698,8 @@ function RecipeDetail() {
       servings: Number(draft.servings) || 1,
       tags: draft.tags,
       notes: draft.notes.trim() || null,
+      instructions: draft.instructions.trim() || null,
+      source_url: draft.source_url.trim() || null,
       ingredients: draft.ingredients
         .filter((ing) => ing.name.trim() || ing.amount || ing.unit.trim())
         .map((ing) => ({
@@ -631,14 +708,6 @@ function RecipeDetail() {
           amount: Number(ing.amount) || 0,
           unit: ing.unit.trim(),
           ingredient_id: ing.ingredient_id ?? null,
-        })),
-      steps: draft.steps
-        .filter((step) => step.title.trim() || step.content.trim() || step.timerSeconds)
-        .map((step) => ({
-          id: step.id,
-          title: step.title.trim(),
-          content: step.content.trim(),
-          timer_seconds: step.timerSeconds === '' ? null : Number(step.timerSeconds),
         })),
     }
 
@@ -664,15 +733,6 @@ function RecipeDetail() {
       ...current,
       ingredients: current.ingredients.map((ing) =>
         ing.id === ingId ? { ...ing, [field]: value } : ing,
-      ),
-    }))
-  }
-
-  const updateDraftStep = (stepId, field, value) => {
-    setDraft((current) => ({
-      ...current,
-      steps: current.steps.map((step) =>
-        step.id === stepId ? { ...step, [field]: value } : step,
       ),
     }))
   }
@@ -828,13 +888,6 @@ function RecipeDetail() {
         </div>
       </div>
 
-      <div
-        className={`relative mt-6 h-56 w-full overflow-hidden rounded border border-theme bg-gradient-to-br md:h-72 ${editing ? getHeaderTheme(draft.tags?.[0]) : headerTheme}`}
-        aria-hidden="true"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_25%,rgba(255,255,255,0.1),transparent_40%),radial-gradient(circle_at_80%_75%,rgba(255,255,255,0.08),transparent_45%)]" />
-      </div>
-
       <header className="mt-6">
         {editing ? (
           <input
@@ -845,7 +898,10 @@ function RecipeDetail() {
             className="font-display w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-3xl font-semibold text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           />
         ) : (
-          <h1 className="font-display text-3xl font-semibold text-mise-300">{recipe.title}</h1>
+          <>
+            <h1 className="font-display text-3xl font-semibold text-mise-300">{recipe.title}</h1>
+            <RecipeHeroImage recipeId={recipe.id} title={recipe.title} />
+          </>
         )}
 
         <div className="mt-3">
@@ -1109,88 +1165,41 @@ function RecipeDetail() {
             </div>
           </section>
 
-          {/* Steps editor */}
-          <section className="rounded border border-theme bg-mise-900 p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Steps</h2>
-              <button
-                type="button"
-                onClick={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    steps: [...current.steps, makeDraftStep()],
-                  }))
-                }
-                className="rounded border border-mise-800 px-3 py-1.5 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                Add row
-              </button>
-            </div>
-            <div className="space-y-3">
-              {draft.steps.map((step, index) => (
-                <div key={step.id} className="rounded border border-theme bg-mise-950/50 p-3">
-                  <div className="grid grid-cols-12 gap-2">
-                    <label htmlFor={`edit-step-title-${step.id}`} className="sr-only">Step {index + 1} title</label>
-                    <input
-                      id={`edit-step-title-${step.id}`}
-                      type="text"
-                      value={step.title}
-                      onChange={(e) => updateDraftStep(step.id, 'title', e.target.value)}
-                      placeholder="Step title"
-                      className={`${inputCls} col-span-7`}
-                    />
-                    <label htmlFor={`edit-step-timer-${step.id}`} className="sr-only">Timer seconds</label>
-                    <input
-                      id={`edit-step-timer-${step.id}`}
-                      type="number"
-                      min="0"
-                      value={step.timerSeconds}
-                      onChange={(e) => updateDraftStep(step.id, 'timerSeconds', e.target.value)}
-                      placeholder="Timer (sec)"
-                      className={`${inputCls} col-span-4`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          steps:
-                            current.steps.length === 1
-                              ? current.steps
-                              : current.steps.filter((s) => s.id !== step.id),
-                        }))
-                      }
-                      aria-label={`Remove step ${index + 1}`}
-                      className="col-span-1 flex items-center justify-center text-rose-400 transition hover:text-rose-300 focus-visible:outline-none"
-                    >
-                      <X size={15} />
-                    </button>
-                  </div>
-                  <label htmlFor={`edit-step-content-${step.id}`} className="sr-only">Step {index + 1} content</label>
-                  <textarea
-                    id={`edit-step-content-${step.id}`}
-                    value={step.content}
-                    onChange={(e) => updateDraftStep(step.id, 'content', e.target.value)}
-                    placeholder="Step instructions"
-                    rows={3}
-                    className={`${inputCls} mt-2`}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-
           {/* Notes editor */}
+          <MarkdownField
+            id="edit-notes"
+            label="Notes"
+            labelClassName="text-xs font-medium uppercase tracking-widest text-mise-500"
+            value={draft.notes}
+            onChange={(e) => setDraftField('notes', e.target.value)}
+            rows={4}
+            placeholder="Any prep, storage, or serving notes"
+            textareaClassName={inputCls}
+          />
+
+          {/* Instructions editor */}
+          <MarkdownField
+            id="edit-instructions"
+            label="Instructions"
+            labelClassName="text-xs font-medium uppercase tracking-widest text-mise-500"
+            value={draft.instructions}
+            onChange={(e) => setDraftField('instructions', e.target.value)}
+            rows={8}
+            placeholder={'1. Step one\n2. Step two'}
+            textareaClassName={inputCls}
+          />
+
+          {/* Source URL editor */}
           <div>
-            <label className="mb-2 block text-xs font-medium uppercase tracking-widest text-mise-500" htmlFor="edit-notes">
-              Notes
+            <label className="mb-2 block text-xs font-medium uppercase tracking-widest text-mise-500" htmlFor="edit-source-url">
+              Source URL
             </label>
-            <textarea
-              id="edit-notes"
-              value={draft.notes}
-              onChange={(e) => setDraftField('notes', e.target.value)}
-              rows={4}
-              placeholder="Any prep, storage, or serving notes"
+            <input
+              id="edit-source-url"
+              type="url"
+              value={draft.source_url}
+              onChange={(e) => setDraftField('source_url', e.target.value)}
+              placeholder="https://..."
               className={inputCls}
             />
           </div>
@@ -1201,63 +1210,100 @@ function RecipeDetail() {
             <section className="rounded border border-theme bg-mise-900 p-4">
               <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
               <ul className="mt-4 space-y-2">
-                {scaledIngredients.map((ingredient) => (
-                  <li
-                    key={ingredient.id}
-                    className="flex items-baseline justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
-                  >
-                    <span className="text-mise-400">
-                      {ingredient.displayName}
-                      {!ingredient.linkedToDb && (
-                        <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
-                      )}
-                    </span>
-                    <span className="text-sm font-medium text-mise-300">
-                      {ingredient.scaledAmount} {ingredient.unit}
-                    </span>
-                  </li>
-                ))}
+                {scaledIngredients.map((ingredient) => {
+                  const bd = ingredient.breakdown
+                  const macroLine = bd
+                    ? bd.matched
+                      ? `Cal: ${Math.round(bd.calories)}  P: ${Math.round(bd.protein)}g  F: ${Math.round(bd.fat)}g  C: ${Math.round(bd.carbs)}g`
+                      : '—'
+                    : null
+                  return (
+                    <li
+                      key={ingredient.id}
+                      className="flex items-start justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-mise-400">
+                          {toTitleCase(ingredient.displayName)}
+                          {!ingredient.linkedToDb && (
+                            <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
+                          )}
+                        </span>
+                        {macroLine !== null && (
+                          <p className="mt-0.5 text-[11px] text-mise-600">{macroLine}</p>
+                        )}
+                      </div>
+                      <span className="shrink-0 text-sm font-medium text-mise-300">
+                        {ingredient.scaledAmount} {ingredient.unit}
+                      </span>
+                    </li>
+                  )
+                })}
               </ul>
             </section>
 
             <section className="rounded border border-theme bg-mise-900 p-4">
               <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Recipe Details</h2>
-              <div className="mt-4 space-y-3 text-sm text-mise-400">
-                <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
-                  <span className="block text-xs uppercase tracking-widest text-mise-500">Notes</span>
-                  <p className="mt-1">{recipe.notes || 'No notes provided.'}</p>
-                </div>
-                <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
-                  <span className="block text-xs uppercase tracking-widest text-mise-500">Steps</span>
-                  <p className="mt-1">{steps.length} step{steps.length === 1 ? '' : 's'}</p>
-                </div>
-                <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
-                  <span className="block text-xs uppercase tracking-widest text-mise-500">Tags</span>
-                  <p className="mt-1">{tags.length ? tags.join(', ') : 'No tags'}</p>
-                </div>
+              <div className="mt-4 space-y-3">
+                {recipe.notes && (
+                  <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
+                    <span className="block text-xs uppercase tracking-widest text-mise-500">Notes</span>
+                    <div className="mt-1"><MarkdownText text={recipe.notes} /></div>
+                  </div>
+                )}
+                {recipe.source_url && (
+                  <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
+                    <span className="block text-xs uppercase tracking-widest text-mise-500">Source</span>
+                    <a
+                      href={recipe.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 block truncate text-sm text-ember hover:underline"
+                    >
+                      {recipe.source_url}
+                    </a>
+                  </div>
+                )}
+                {tags.length > 0 && (
+                  <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
+                    <span className="block text-xs uppercase tracking-widest text-mise-500">Tags</span>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {tags.map((tag) => (
+                        <span key={tag} className="rounded border border-theme bg-mise-800/40 px-2 py-0.5 text-xs text-mise-400">{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           </div>
 
-          <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
-            <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Steps</h2>
-            <ol className="mt-4 space-y-3">
-              {steps.map((step, index) => (
-                <li key={step.id} className="rounded border border-theme bg-mise-950/50 px-4 py-3">
-                  <p className="text-sm font-medium text-mise-500">Step {index + 1}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <p className="text-base font-semibold text-mise-300">{step.title}</p>
-                    {step.timer_seconds !== null && step.timer_seconds !== undefined && (
-                      <span className="rounded border border-ember/40 bg-ember/20 px-2 py-0.5 text-xs font-medium text-ember">
-                        {formatTimerLabel(step.timer_seconds)}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-sm text-mise-400">{step.content}</p>
-                </li>
-              ))}
-            </ol>
-          </section>
+          {recipe.instructions ? (
+            <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
+              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Instructions</h2>
+              <div className="mt-4"><MarkdownText text={recipe.instructions} /></div>
+            </section>
+          ) : steps.length > 0 ? (
+            <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
+              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Steps</h2>
+              <ol className="mt-4 space-y-3">
+                {steps.map((step, index) => (
+                  <li key={step.id} className="rounded border border-theme bg-mise-950/50 px-4 py-3">
+                    <p className="text-sm font-medium text-mise-500">Step {index + 1}</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <p className="text-base font-semibold text-mise-300">{step.title}</p>
+                      {step.timer_seconds !== null && step.timer_seconds !== undefined && (
+                        <span className="rounded border border-ember/40 bg-ember/20 px-2 py-0.5 text-xs font-medium text-ember">
+                          {formatTimerLabel(step.timer_seconds)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-mise-400">{step.content}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
         </>
       )}
     </section>

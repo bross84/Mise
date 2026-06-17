@@ -25,6 +25,162 @@ function getHeaderTheme(firstTag) {
  return tagHeaderTheme[firstTag.toLowerCase()] || 'from-slate-800 via-slate-900 to-slate-950 bg-mise-800/40'
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
+
+function RecipeCard({ recipe, rating, onOpen, onRate }) {
+  const [imageUrl, setImageUrl] = useState(null)
+  const [loadingImage, setLoadingImage] = useState(true)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadImage() {
+      try {
+        setLoadingImage(true)
+        const response = await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipe.id)}/image`)
+        if (!response.ok) {
+          throw new Error(`Image request failed with status ${response.status}`)
+        }
+        const data = await response.json()
+        if (active) {
+          setImageUrl(data?.image_url ?? null)
+        }
+      } catch {
+        if (active) {
+          setImageUrl(null)
+        }
+      } finally {
+        if (active) {
+          setLoadingImage(false)
+        }
+      }
+    }
+
+    void loadImage()
+
+    return () => {
+      active = false
+    }
+  }, [recipe.id])
+
+  const tags = Array.isArray(recipe.tags) ? recipe.tags : []
+  const ingredientCount = Array.isArray(recipe.ingredients) ? recipe.ingredients.length : 0
+  const stepCount = Array.isArray(recipe.steps) ? recipe.steps.length : 0
+  const headerTheme = getHeaderTheme(recipe.tags?.[0])
+
+  return (
+    <article
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen()
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open recipe ${recipe.title}`}
+      className="group flex flex-col overflow-hidden rounded border border-mise-800 bg-mise-900 text-left transition hover:border-mise-700 hover:bg-mise-900/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+    >
+      <div className="relative h-40 w-full border-b border-mise-800 bg-mise-900" aria-hidden="true">
+        {loadingImage ? (
+          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-mise-800 via-mise-700/70 to-mise-800" />
+        ) : imageUrl ? (
+          <img
+            src={imageUrl}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={() => setImageUrl(null)}
+          />
+        ) : (
+          <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-4xl text-mise-500`}>
+            <span aria-hidden="true">🍽️</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col p-5">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="font-display text-lg font-semibold text-mise-300 transition group-hover:text-mise-200">
+            {recipe.title}
+          </h2>
+          <span className="rounded border border-mise-800 px-2 py-1 text-xs text-mise-500">
+            {recipe.servings} servings
+          </span>
+        </div>
+
+        <p className="mt-3 line-clamp-3 text-sm text-mise-500">
+          {recipe.notes || 'No notes available for this recipe.'}
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-2 pb-4">
+          {tags.map((tag) => (
+            <span
+              key={`${recipe.id}-${tag}`}
+              className="rounded border border-theme bg-mise-800/40 px-2.5 py-1 text-xs font-medium text-mise-500"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+
+        <div className="mt-auto grid grid-cols-3 gap-2 border-t border-theme pt-4 text-xs">
+          <div>
+            <p className="text-mise-500">Ingredients</p>
+            <p className="mt-1 font-semibold text-mise-300">{ingredientCount}</p>
+          </div>
+          <div>
+            <p className="text-mise-500">Steps</p>
+            <p className="mt-1 font-semibold text-mise-300">{stepCount}</p>
+          </div>
+          <div>
+            <p className="text-mise-500">Updated</p>
+            <p className="mt-1 font-semibold text-mise-300">
+              {recipe.updated_at ? new Date(recipe.updated_at).toLocaleDateString() : 'New'}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-end gap-2 border-t border-theme pt-4">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onRate(recipe.id, 'up')
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+            className="inline-flex items-center gap-1.5 border border-mise-800 px-2.5 py-1.5 text-xs font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            aria-label="Thumbs up"
+            aria-pressed={rating === 'up'}
+          >
+            <ThumbsUp
+              size={14}
+              className={rating === 'up' ? 'fill-current text-ember' : 'text-mise-500'}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onRate(recipe.id, 'down')
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+            className="inline-flex items-center gap-1.5 border border-mise-800 px-2.5 py-1.5 text-xs font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            aria-label="Thumbs down"
+            aria-pressed={rating === 'down'}
+          >
+            <ThumbsDown
+              size={14}
+              className={rating === 'down' ? 'fill-current text-rose-300' : 'text-mise-500'}
+            />
+          </button>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 function RecipeBrowser() {
   const navigate = useNavigate()
   const [recipes, setRecipes] = useState([])
@@ -157,111 +313,15 @@ function RecipeBrowser() {
         <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {filteredRecipes.map((recipe) => {
             const rating = ratingsByRecipeId[recipe.id] || null
-            const headerTheme = getHeaderTheme(recipe.tags?.[0])
-            const tags = Array.isArray(recipe.tags) ? recipe.tags : []
-            const ingredientCount = Array.isArray(recipe.ingredients) ? recipe.ingredients.length : 0
-            const stepCount = Array.isArray(recipe.steps) ? recipe.steps.length : 0
 
             return (
-              <article
+              <RecipeCard
                 key={recipe.id}
-                onClick={() => navigate(`/recipe/${recipe.id}`)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    navigate(`/recipe/${recipe.id}`)
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                aria-label={`Open recipe ${recipe.title}`}
-                className="group flex flex-col overflow-hidden rounded border border-mise-800 bg-mise-900 text-left transition hover:border-mise-700 hover:bg-mise-900/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                <div
-                  className={`relative h-28 w-full rounded border-b border-mise-800 bg-gradient-to-br ${headerTheme}`}
-                  aria-hidden="true"
-                >
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.08),transparent_45%),radial-gradient(circle_at_80%_100%,rgba(255,255,255,0.06),transparent_40%)]" />
-                </div>
-
-                <div className="flex flex-1 flex-col p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <h2 className="font-display text-lg font-semibold text-mise-300 transition group-hover:text-mise-200">
-                      {recipe.title}
-                    </h2>
-                    <span className="rounded border border-mise-800 px-2 py-1 text-xs text-mise-500">
-                      {recipe.servings} servings
-                    </span>
-                  </div>
-
-                  <p className="mt-3 line-clamp-3 text-sm text-mise-500">
-                    {recipe.notes || 'No notes available for this recipe.'}
-                  </p>
-
-                  <div className="mt-4 flex flex-wrap gap-2 pb-4">
-                    {tags.map((tag) => (
-                      <span
-                        key={`${recipe.id}-${tag}`}
-                        className="rounded border border-theme bg-mise-800/40 px-2.5 py-1 text-xs font-medium text-mise-500"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="mt-auto grid grid-cols-3 gap-2 border-t border-theme pt-4 text-xs">
-                    <div>
-                      <p className="text-mise-500">Ingredients</p>
-                      <p className="mt-1 font-semibold text-mise-300">{ingredientCount}</p>
-                    </div>
-                    <div>
-                      <p className="text-mise-500">Steps</p>
-                      <p className="mt-1 font-semibold text-mise-300">{stepCount}</p>
-                    </div>
-                    <div>
-                      <p className="text-mise-500">Updated</p>
-                      <p className="mt-1 font-semibold text-mise-300">
-                        {recipe.updated_at ? new Date(recipe.updated_at).toLocaleDateString() : 'New'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-end gap-2 border-t border-theme pt-4">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setRecipeRating(recipe.id, 'up')
-                      }}
-                      onKeyDown={(event) => event.stopPropagation()}
-                      className="inline-flex items-center gap-1.5 border border-mise-800 px-2.5 py-1.5 text-xs font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                      aria-label="Thumbs up"
-                      aria-pressed={rating === 'up'}
-                    >
-                      <ThumbsUp
-                        size={14}
-                        className={rating === 'up' ? 'fill-current text-ember' : 'text-mise-500'}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setRecipeRating(recipe.id, 'down')
-                      }}
-                      onKeyDown={(event) => event.stopPropagation()}
-                      className="inline-flex items-center gap-1.5 border border-mise-800 px-2.5 py-1.5 text-xs font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                      aria-label="Thumbs down"
-                      aria-pressed={rating === 'down'}
-                    >
-                      <ThumbsDown
-                        size={14}
-                        className={rating === 'down' ? 'fill-current text-rose-300' : 'text-mise-500'}
-                      />
-                    </button>
-                  </div>
-                </div>
-              </article>
+                recipe={recipe}
+                rating={rating}
+                onOpen={() => navigate(`/recipe/${recipe.id}`)}
+                onRate={setRecipeRating}
+              />
             )
           })}
         </div>

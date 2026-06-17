@@ -13,6 +13,8 @@ class Recipe(Base):
     ingredients = Column(JSON, default=list)
     steps = Column(JSON, default=list)
     notes = Column(String, nullable=True)
+    instructions = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
     rating = Column(Integer, nullable=True)
     thumbs = Column(String, nullable=True)
     image_url = Column(String, nullable=True)

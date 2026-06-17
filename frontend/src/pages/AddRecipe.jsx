@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createIngredient, createRecipe, getIngredients, matchIngredients, parseRecipe, searchIngredients } from '../api/client.js'
+import { blockIngredient, createIngredient, createRecipe, getIngredients, matchIngredients, parseIngredients, searchIngredients } from '../api/client.js'
+import { MarkdownField } from '../components/MarkdownText.jsx'
 
 const inputCls =
   'w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
@@ -52,99 +53,22 @@ function getCaretCoords(el, index) {
   return coords
 }
 
-// ─── markdown parser ─────────────────────────────────────────────────────────
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
-function parseMarkdownRecipe(md) {
-  const lines = md.split('\n')
-  let title = ''
-  let servings = 1
-  let tags = []
-  let notes = ''
-  const ingredients = []
-  const steps = []
-
-  let section = null
-  let notesLines = []
-  let stepCounter = 0
-
-  for (const raw of lines) {
-    const line = raw.trimEnd()
-
-    // Title
-    if (/^#\s+/.test(line)) {
-      title = line.replace(/^#\s+/, '').trim()
-      continue
-    }
-
-    // Servings
-    const servingsMatch = line.match(/^\*\*Servings:\*\*\s*(\d+)/i)
-    if (servingsMatch) { servings = parseInt(servingsMatch[1], 10); continue }
-
-    // Tags
-    const tagsMatch = line.match(/^\*\*Tags:\*\*\s*(.+)/i)
-    if (tagsMatch) {
-      tags = tagsMatch[1].split(',').map((t) => t.trim()).filter(Boolean)
-      continue
-    }
-
-    // Section headers
-    if (/^##\s+Ingredients/i.test(line)) { section = 'ingredients'; continue }
-    if (/^##\s+Steps/i.test(line)) { section = 'steps'; continue }
-    if (/^##\s+Notes/i.test(line)) { section = 'notes'; continue }
-    if (/^##\s+/.test(line)) { section = null; continue }
-
-    if (section === 'ingredients') {
-      // - 250g chicken breast  OR  - 2 eggs
-      const ingMatch = line.match(/^-\s+(\d*\.?\d+)\s*g\s+(.+)/)
-      if (ingMatch) {
-        ingredients.push({
-          id: `ing-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          name: ingMatch[2].trim(),
-          amount: parseFloat(ingMatch[1]),
-          unit: 'g',
-        })
-      } else {
-        const bare = line.match(/^-\s+(.+)/)
-        if (bare) {
-          ingredients.push({
-            id: `ing-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            name: bare[1].trim(),
-            amount: 0,
-            unit: 'g',
-          })
-        }
-      }
-    }
-
-    if (section === 'steps') {
-      const stepMatch = line.match(/^\d+\.\s+(.+)/)
-      if (stepMatch) {
-        stepCounter++
-        steps.push({
-          id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          title: `Step ${stepCounter}`,
-          content: stepMatch[1].trim(),
-          timer_seconds: null,
-        })
-      }
-    }
-
-    if (section === 'notes' && line.trim()) {
-      notesLines.push(line.trim())
-    }
-  }
-
-  notes = notesLines.join('\n').trim() || null
-
-  return { title, servings, tags, ingredients, steps, notes }
+function parseAmount(str) {
+  if (!str) return 0
+  const s = String(str).trim()
+  const fraction = s.match(/^(\d+)\s*\/\s*(\d+)$/)
+  if (fraction) return parseInt(fraction[1]) / parseInt(fraction[2])
+  const mixed = s.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)$/)
+  if (mixed) return parseInt(mixed[1]) + parseInt(mixed[2]) / parseInt(mixed[3])
+  const range = s.match(/^([\d.]+)\s*[-–]/)
+  if (range) return parseFloat(range[1])
+  return parseFloat(s) || 0
 }
 
-// Split on --- separator, ignoring empty blocks
-function splitMarkdownRecipes(md) {
-  return md
-    .split(/^---$/m)
-    .map((s) => s.trim())
-    .filter(Boolean)
+function toTitleCase(str) {
+  return String(str ?? '').replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
 }
 
 function formatServingMacroLabel(result) {
@@ -165,8 +89,25 @@ function formatServingMacroLabel(result) {
   return `Per ${servingG}g: ${Math.round((Number(result.calories) || 0) * scale)} cal · ${Math.round((Number(result.protein) || 0) * scale)}g protein · ${Math.round((Number(result.carbs) || 0) * scale)}g carbs · ${Math.round((Number(result.fat) || 0) * scale)}g fat`
 }
 
+function formatOffServingText(result) {
+  const servingCandidates = [
+    result.serving_grams,
+    result.serving_size_g,
+    result.serving_size,
+    result.amount_grams,
+  ]
+
+  for (const candidate of servingCandidates) {
+    const numeric = Number(candidate)
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return `Per serving: ${numeric}g`
+    }
+  }
+
+  return 'Per 100g'
+}
+
 // ─── IngredientSearchPanel ────────────────────────────────────────────────────
-// Inline panel (not a dropdown) for searching USDA/OFF and adding an ingredient
 
 function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
   const [query, setQuery] = useState(ingredientName)
@@ -180,6 +121,16 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
   const [customSaving, setCustomSaving] = useState(false)
   const timerRef = useRef(null)
 
+  const handleBlock = async (result, i) => {
+    if (!result.source_id) return
+    setResults((prev) => prev.filter((_, idx) => idx !== i))
+    try {
+      await blockIngredient({ name: result.name, source: result.source, source_id: result.source_id })
+    } catch {
+      // optimistic removal stands even on error
+    }
+  }
+
   const runSearch = (q, { immediate = false } = {}) => {
     clearTimeout(timerRef.current)
     setError('')
@@ -192,7 +143,16 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
     const execute = () => {
       setSearching(true)
       searchIngredients(q, { includeExternal: false })
-        .then((d) => setResults(d?.results ?? []))
+        .then((d) => {
+          const raw = d?.results ?? []
+          const qWords = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
+          const filtered = qWords.length === 0 ? raw : raw.filter((r) => {
+            const name = r.name.toLowerCase()
+            const matched = qWords.filter((w) => name.includes(w))
+            return matched.length / qWords.length >= 0.5
+          })
+          setResults(filtered)
+        })
         .catch(() => setResults([]))
         .finally(() => setSearching(false))
     }
@@ -200,7 +160,6 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
     timerRef.current = setTimeout(execute, 400)
   }
 
-  // Fire search immediately on mount with the pre-filled name
   useEffect(() => {
     runSearch(ingredientName, { immediate: true })
     return () => clearTimeout(timerRef.current)
@@ -214,9 +173,7 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
 
   const handleSearchExternal = () => {
     const trimmed = query.trim()
-    if (trimmed.length < 2) {
-      return
-    }
+    if (trimmed.length < 2) return
     clearTimeout(timerRef.current)
     setError('')
     setSearchedExternal(true)
@@ -229,219 +186,51 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
 
   const handleSearchUsda = () => {
     const trimmed = query.trim()
-    if (trimmed.length < 2) {
-      return
-    }
+    if (trimmed.length < 2) return
     clearTimeout(timerRef.current)
     setError('')
     setSearchedExternal(true)
     setSearching(true)
-    searchIngredients(trimmed, { externalSource: 'usda' })
+    searchIngredients(trimmed, { includeExternal: true, externalSource: 'usda' })
       .then((d) => setResults(d?.results ?? []))
       .catch(() => setResults([]))
       .finally(() => setSearching(false))
   }
 
-  const handleSearchOpenFoodFacts = async () => {
+  const handleSearchOpenFoodFacts = () => {
     const trimmed = query.trim()
-    if (trimmed.length < 2) {
-      return
-    }
+    if (trimmed.length < 2) return
     clearTimeout(timerRef.current)
     setError('')
     setSearchedExternal(true)
     setSearching(true)
-    try {
-      const url = new URL('https://us.openfoodfacts.org/cgi/search.pl')
-      url.searchParams.set('search_terms', trimmed)
-      url.searchParams.set('search_simple', '1')
-      url.searchParams.set('action', 'process')
-      url.searchParams.set('json', '1')
-      url.searchParams.set('page_size', '15')
-      const response = await fetch(url.toString())
-      if (!response.ok) {
-        throw new Error('Open Food Facts search failed.')
-      }
-      const data = await response.json()
-      const products = Array.isArray(data?.products) ? data.products : []
-      const offResults = products
-        .map((product) => {
-          const nutriments = product?.nutriments ?? {}
-          const name = (product?.product_name || product?.generic_name || '').trim()
-          if (!name) {
-            return null
-          }
+    searchIngredients(trimmed, { includeExternal: true, externalSource: 'openfoodfacts' })
+      .then((d) => setResults(d?.results ?? []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false))
+  }
 
-          const servingText = product?.serving_size ?? ''
-          const servingMatch = String(servingText).match(/([\d.]+)\s*g/i)
-          const servingGrams = servingMatch ? Number.parseFloat(servingMatch[1]) : null
-          const caloriesServing = nutriments['energy-kcal_serving']
-          const proteinServing = nutriments.proteins_serving
-          const carbsServing = nutriments.carbohydrates_serving
-          const fatServing = nutriments.fat_serving
-          const hasServingMacros =
-            caloriesServing != null ||
-            proteinServing != null ||
-            carbsServing != null ||
-            fatServing != null
-
-          let calories100g = Number(nutriments['energy-kcal_100g'])
-          if (!Number.isFinite(calories100g)) {
-            calories100g = Number(nutriments['energy_100g']) / 4.184
-          }
-          const protein100g = Number(nutriments.proteins_100g)
-          const carbs100g = Number(nutriments.carbohydrates_100g)
-          const fat100g = Number(nutriments.fat_100g)
-
-          let calories = 0
-          let protein = 0
-          let carbs = 0
-          let fat = 0
-          let unit = 'per 100g'
-
-          if (hasServingMacros) {
-            calories = Number(caloriesServing)
-            protein = Number(proteinServing)
-            carbs = Number(carbsServing)
-            fat = Number(fatServing)
-            if (servingGrams) {
-              unit = `per ${servingGrams}g`
-            }
-          } else if (servingGrams) {
-            const factor = servingGrams / 100
-            calories = (Number.isFinite(calories100g) ? calories100g : 0) * factor
-            protein = (Number.isFinite(protein100g) ? protein100g : 0) * factor
-            carbs = (Number.isFinite(carbs100g) ? carbs100g : 0) * factor
-            fat = (Number.isFinite(fat100g) ? fat100g : 0) * factor
-            unit = `per ${servingGrams}g`
-          } else {
-            calories = Number.isFinite(calories100g) ? calories100g : 0
-            protein = Number.isFinite(protein100g) ? protein100g : 0
-            carbs = Number.isFinite(carbs100g) ? carbs100g : 0
-            fat = Number.isFinite(fat100g) ? fat100g : 0
-          }
-
-          return {
-            name,
-            calories: Math.round(calories * 10) / 10,
-            protein: Math.round(protein * 10) / 10,
-            carbs: Math.round(carbs * 10) / 10,
-            fat: Math.round(fat * 10) / 10,
-            unit,
-            source: 'openfoodfacts',
-            serving_grams: Number.isFinite(servingGrams) ? servingGrams : null,
-            barcode: String(product?.code ?? '').trim() || null,
-          }
-        })
-        .filter(Boolean)
-      setResults(offResults)
-    } catch {
-      setResults([])
-    } finally {
-      setSearching(false)
-    }
+  const runBarcodeLookup = (rawValue) => {
+    const next = String(rawValue ?? '').replace(/\D/g, '')
+    setQuery(next)
+    setError('')
+    setSearchedExternal(true)
+    if (!next) { setResults([]); return }
+    setSearching(true)
+    searchIngredients(next, { includeExternal: true, externalSource: 'openfoodfacts' })
+      .then((d) => setResults(d?.results ?? []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false))
   }
 
   const handleSearchByBarcode = () => {
     clearTimeout(timerRef.current)
-    setError('')
-    setResults([])
-    setSearchedExternal(false)
     setBarcodeMode(true)
+    runBarcodeLookup(query)
   }
 
-  const handleBarcodeChange = async (e) => {
-    const next = e.target.value.replace(/\D/g, '')
-    setQuery(next)
-    setError('')
-    setSearchedExternal(true)
-    if (!next) {
-      setResults([])
-      return
-    }
-    setSearching(true)
-    try {
-      const response = await fetch(`https://us.openfoodfacts.org/api/v0/product/${next}.json`)
-      if (!response.ok) {
-        throw new Error('Barcode lookup failed.')
-      }
-      const data = await response.json()
-      if (data?.status !== 1 || !data?.product) {
-        setResults([])
-        return
-      }
-      const product = data.product
-      const nutriments = product?.nutriments ?? {}
-      const name = (product?.product_name || product?.generic_name || '').trim()
-      if (!name) {
-        setResults([])
-        return
-      }
-      const servingText = product?.serving_size ?? ''
-      const servingMatch = String(servingText).match(/([\d.]+)\s*g/i)
-      const servingGrams = servingMatch ? Number.parseFloat(servingMatch[1]) : null
-      const caloriesServing = nutriments['energy-kcal_serving']
-      const proteinServing = nutriments.proteins_serving
-      const carbsServing = nutriments.carbohydrates_serving
-      const fatServing = nutriments.fat_serving
-      const hasServingMacros =
-        caloriesServing != null ||
-        proteinServing != null ||
-        carbsServing != null ||
-        fatServing != null
-
-      let calories100g = Number(nutriments['energy-kcal_100g'])
-      if (!Number.isFinite(calories100g)) {
-        calories100g = Number(nutriments['energy_100g']) / 4.184
-      }
-      const protein100g = Number(nutriments.proteins_100g)
-      const carbs100g = Number(nutriments.carbohydrates_100g)
-      const fat100g = Number(nutriments.fat_100g)
-
-      let calories = 0
-      let protein = 0
-      let carbs = 0
-      let fat = 0
-      let unit = 'per 100g'
-
-      if (hasServingMacros) {
-        calories = Number(caloriesServing)
-        protein = Number(proteinServing)
-        carbs = Number(carbsServing)
-        fat = Number(fatServing)
-        if (servingGrams) {
-          unit = `per ${servingGrams}g`
-        }
-      } else if (servingGrams) {
-        const factor = servingGrams / 100
-        calories = (Number.isFinite(calories100g) ? calories100g : 0) * factor
-        protein = (Number.isFinite(protein100g) ? protein100g : 0) * factor
-        carbs = (Number.isFinite(carbs100g) ? carbs100g : 0) * factor
-        fat = (Number.isFinite(fat100g) ? fat100g : 0) * factor
-        unit = `per ${servingGrams}g`
-      } else {
-        calories = Number.isFinite(calories100g) ? calories100g : 0
-        protein = Number.isFinite(protein100g) ? protein100g : 0
-        carbs = Number.isFinite(carbs100g) ? carbs100g : 0
-        fat = Number.isFinite(fat100g) ? fat100g : 0
-      }
-
-      setResults([{
-        name,
-        calories: Math.round(calories * 10) / 10,
-        protein: Math.round(protein * 10) / 10,
-        carbs: Math.round(carbs * 10) / 10,
-        fat: Math.round(fat * 10) / 10,
-        unit,
-        source: 'openfoodfacts',
-        serving_grams: Number.isFinite(servingGrams) ? servingGrams : null,
-        barcode: String(product?.code ?? '').trim() || null,
-      }])
-    } catch {
-      setResults([])
-    } finally {
-      setSearching(false)
-    }
+  const handleBarcodeChange = (e) => {
+    runBarcodeLookup(e.target.value)
   }
 
   const handleAdd = async (result, index) => {
@@ -463,8 +252,8 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
           barcode: result.source === 'openfoodfacts' ? (result.barcode || null) : null,
         })
       }
-      const matchedNow = await onSaved(saved)
-      if (matchedNow) onClose()
+      await onSaved(saved)
+      onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add ingredient.')
     } finally {
@@ -477,15 +266,13 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="relative flex-1">
           <input
-            type={barcodeMode ? 'text' : 'text'}
+            type="text"
             value={query}
             onChange={barcodeMode ? handleBarcodeChange : handleQueryChange}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
-                if (!barcodeMode) {
-                  runSearch(query, { immediate: true })
-                }
+                if (!barcodeMode) runSearch(query, { immediate: true })
               }
             }}
             inputMode={barcodeMode ? 'numeric' : undefined}
@@ -496,6 +283,14 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
           />
           {searching && (
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-mise-500">Searching…</span>
+          )}
+          {!searching && (results.length > 0 || searchedExternal) && (
+            <button
+              type="button"
+              onClick={() => { setQuery(''); setResults([]); setSearchedExternal(false); setError(''); setBarcodeMode(false) }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 text-xs text-mise-500 transition hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              aria-label="Clear search"
+            >×</button>
           )}
         </div>
         <button
@@ -509,13 +304,49 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
 
       {error && <p className="mb-2 text-xs text-rose-400">{error}</p>}
 
+      {!searching && !barcodeMode && query.trim().length >= 2 && (
+        <div className="space-y-2">
+          {searchedExternal && results.length === 0 && (
+            <p className="text-xs text-mise-500">No USDA or Open Food Facts results found.</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSearchUsda}
+              className="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Search USDA
+            </button>
+            <button
+              type="button"
+              onClick={handleSearchOpenFoodFacts}
+              className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Search Open Food Facts
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleSearchByBarcode}
+            className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          >
+            Search by barcode
+          </button>
+        </div>
+      )}
+
       {results.length > 0 && (
         <ul className="space-y-1">
           {results.map((r, i) => (
             <li key={i} className="flex items-center gap-3 rounded border border-mise-800 bg-mise-900/60 px-3 py-2">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-mise-300">{r.name}</span>
+                  <span className="text-sm text-mise-300">{toTitleCase(r.name)}</span>
+                  {r.source_url && (
+                    <a href={r.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-mise-600 hover:text-mise-400" title="View source">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    </a>
+                  )}
                   {r.source === 'usda' && (
                     <span className="rounded-full border border-sky-500/30 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">USDA</span>
                   )}
@@ -523,8 +354,24 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
                     <span className="rounded-full border border-emerald-500/30 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">OFF</span>
                   )}
                 </div>
+                {r.source === 'openfoodfacts' && (
+                  <p className="mt-0.5 text-[11px] text-mise-500">
+                    <span>{formatOffServingText(r)}</span>
+                    {r.barcode && <span className="ml-2 text-mise-600">Barcode: {r.barcode}</span>}
+                  </p>
+                )}
                 <p className="mt-0.5 text-xs text-mise-500">{formatServingMacroLabel(r)}</p>
               </div>
+              {r.source_id && (
+                <button
+                  type="button"
+                  onClick={() => handleBlock(r, i)}
+                  className="shrink-0 rounded border border-mise-800 px-2 py-1.5 text-[10px] text-mise-500 transition hover:border-rose-500/40 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                  title="Block this result"
+                >
+                  Block
+                </button>
+              )}
               <button
                 type="button"
                 disabled={savingIndex !== null}
@@ -536,38 +383,6 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
             </li>
           ))}
         </ul>
-      )}
-
-      {!searching && results.length === 0 && query.trim().length >= 2 && (
-        searchedExternal ? (
-          <p className="text-xs text-mise-500">No USDA or Open Food Facts results found.</p>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleSearchUsda}
-                className="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                Search USDA
-              </button>
-              <button
-                type="button"
-                onClick={handleSearchOpenFoodFacts}
-                className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                Search Open Food Facts
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={handleSearchByBarcode}
-              className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-            >
-              Search by barcode
-            </button>
-          </div>
-        )
       )}
 
       {customDraft === null ? (
@@ -663,11 +478,13 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
 // ─── MatchedIngredientList ────────────────────────────────────────────────────
 
 function MatchedIngredientList({ matchResults, onRerun }) {
-  const [openSearch, setOpenSearch] = useState(null) // ingredient name with panel open
+  const [openSearch, setOpenSearch] = useState(null)
   const [acceptedIndexes, setAcceptedIndexes] = useState([])
+  const [skippedIndexes, setSkippedIndexes] = useState([])
 
   useEffect(() => {
     setAcceptedIndexes([])
+    setSkippedIndexes([])
   }, [matchResults])
 
   if (!matchResults) return null
@@ -676,8 +493,22 @@ function MatchedIngredientList({ matchResults, onRerun }) {
     .map((result, index) => ({ result, index }))
     .filter((entry) => !entry.result.match)
     .filter((entry) => !acceptedIndexes.includes(entry.index))
+    .filter((entry) => !skippedIndexes.includes(entry.index))
 
   if (unmatchedResults.length === 0) return null
+
+  // Build display items with group name headers
+  const displayItems = []
+  let lastGroup = undefined
+  unmatchedResults.forEach(({ result: r, index: i }) => {
+    if (r.group_name !== lastGroup) {
+      lastGroup = r.group_name
+      if (r.group_name) {
+        displayItems.push({ type: 'group', key: `group-${r.group_name}-${i}`, name: r.group_name })
+      }
+    }
+    displayItems.push({ type: 'ingredient', key: i, result: r, index: i })
+  })
 
   return (
     <div className="mt-4 rounded border border-theme bg-mise-900 p-4">
@@ -689,13 +520,28 @@ function MatchedIngredientList({ matchResults, onRerun }) {
         </button>
       </div>
       <ul className="space-y-2">
-        {unmatchedResults.map(({ result: r, index: i }) => {
+        {displayItems.map((item) => {
+          if (item.type === 'group') {
+            return (
+              <li key={item.key} className="pt-1 text-[10px] font-semibold uppercase tracking-widest text-mise-600">
+                {item.name}
+              </li>
+            )
+          }
+          const { result: r, index: i } = item
           const isOpen = openSearch === r.name
           return (
-            <li key={i}>
+            <li key={item.key}>
               <div className="flex items-center gap-3 rounded border border-theme bg-mise-950/50 px-3 py-2">
                 <span className="text-sm">🔴</span>
-                <span className="flex-1 text-sm text-mise-300">{r.name}</span>
+                <span className="flex-1 text-sm text-mise-300">{toTitleCase(r.name)}</span>
+                <button
+                  type="button"
+                  onClick={() => setSkippedIndexes((prev) => prev.includes(i) ? prev : [...prev, i])}
+                  className="rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300"
+                >
+                  Skip
+                </button>
                 <button
                   type="button"
                   onClick={() => setOpenSearch(isOpen ? null : r.name)}
@@ -710,9 +556,7 @@ function MatchedIngredientList({ matchResults, onRerun }) {
                   onClose={() => setOpenSearch(null)}
                   onSaved={async (saved) => {
                     const matched = await onRerun(i, saved)
-                    if (matched) {
-                      setAcceptedIndexes((prev) => (prev.includes(i) ? prev : [...prev, i]))
-                    }
+                    setAcceptedIndexes((prev) => (prev.includes(i) ? prev : [...prev, i]))
                     return matched
                   }}
                 />
@@ -730,40 +574,41 @@ function MatchedIngredientList({ matchResults, onRerun }) {
 export default function AddRecipe() {
   const navigate = useNavigate()
 
-  const [stage, setStage] = useState('input')   // 'input' | 'editor'
+  const [stage, setStage] = useState('input') // 'input' | 'review'
 
-  // Stage 1
-  const [rawText, setRawText] = useState('')
+  // Form fields
+  const [title, setTitle] = useState('')
+  const [servingsStr, setServingsStr] = useState('1')
+  const [ingredientsText, setIngredientsText] = useState('')
+  const [instructions, setInstructions] = useState('')
+  const [notes, setNotes] = useState('')
+  const [tagsText, setTagsText] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
+
+  // AI parsing
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState('')
+  const [parsedIngredients, setParsedIngredients] = useState([]) // [{raw, name, amount, unit, group_name}]
 
-  // Stage 2 — editor
-  const [tabs, setTabs] = useState([''])
-  const [activeTab, setActiveTab] = useState(0)
-
-  // Stage 2 — matching
+  // Matching
   const [matching, setMatching] = useState(false)
-  const [matchResults, setMatchResults] = useState(null) // per-tab: array indexed by tab
+  const [matchResults, setMatchResults] = useState(null) // [{name, amount, unit, match, group_name}]
 
+  // Saving
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
-  // Ingredient database for @ autocomplete
+  // @ autocomplete
   const [dbIngredients, setDbIngredients] = useState([])
-  const [mentionQuery, setMentionQuery] = useState(null) // null = inactive
+  const [mentionQuery, setMentionQuery] = useState(null)
   const [mentionStart, setMentionStart] = useState(0)
   const [mentionIndex, setMentionIndex] = useState(0)
   const [mentionCoords, setMentionCoords] = useState({ top: 0, left: 0 })
-  const [ingredientOverrides, setIngredientOverrides] = useState({}) // name → ingredient_id
-  const textareaRef = useRef(null)
-
-  const matchedOnceRef = useRef({})
+  const [ingredientOverrides, setIngredientOverrides] = useState({})
+  const ingredientsRef = useRef(null)
 
   useEffect(() => {
-    getIngredients()
-      .then((data) => setDbIngredients(Array.isArray(data) ? data : []))
-      .catch(() => {})
+    getIngredients().then((d) => setDbIngredients(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
 
   const mentionMatches = useMemo(() => {
@@ -773,151 +618,27 @@ export default function AddRecipe() {
     return dbIngredients.filter((i) => i.name.toLowerCase().includes(q)).slice(0, 8)
   }, [mentionQuery, dbIngredients])
 
-  const handleParse = async () => {
-    setParseError('')
-    setParsing(true)
-    try {
-      const result = await parseRecipe({ text: rawText.trim(), url: sourceUrl.trim() || undefined })
-      const blocks = splitMarkdownRecipes(result.markdown)
-      setTabs(blocks.length ? blocks : [result.markdown])
-      setActiveTab(0)
-      setMatchResults(null)
-      setSaveError('')
-      setStage('editor')
-    } catch (err) {
-      setParseError(err instanceof Error ? err.message : "Couldn't parse the recipe — try rephrasing or check the format.")
-    } finally {
-      setParsing(false)
-    }
-  }
-
-  const handleStartOver = () => {
-    setStage('input')
-    setRawText('')
-    setSourceUrl('')
-    setParseError('')
-    setTabs([''])
-    setActiveTab(0)
-    setMatchResults(null)
-    setSaveError('')
-    setIngredientOverrides({})
-    setMentionQuery(null)
-  }
-
-  const runMatching = async (tabIndex) => {
-    const recipe = parseMarkdownRecipe(tabs[tabIndex])
-    if (!recipe.ingredients.length) return
-    setMatching(true)
-    try {
-      const data = await matchIngredients(
-        recipe.ingredients.map((i) => ({ name: i.name, amount: i.amount, unit: i.unit }))
-      )
-      setMatchResults((prev) => {
-        const next = prev ? [...prev] : Array(tabs.length).fill(null)
-        next[tabIndex] = data.results
-        return next
-      })
-    } catch {
-      // matching failure is non-fatal
-    } finally {
-      setMatching(false)
-    }
-  }
-
-  // Run matching whenever we enter the editor stage or switch tabs
-  const handleTabChange = (i) => {
-    setActiveTab(i)
-    if (!matchResults?.[i]) runMatching(i)
-  }
-
-  const applyMatchesToRecipe = (recipe, tabIndex) => {
-    const results = matchResults?.[tabIndex]
-    return {
-      ...recipe,
-      ingredients: recipe.ingredients.map((ing, i) => ({
-        ...ing,
-        ingredient_id:
-          ingredientOverrides[ing.name] ??
-          results?.[i]?.match?.ingredient_id ??
-          null,
-      })),
-    }
-  }
-
-  const saveOne = async (index) => {
-    const recipe = applyMatchesToRecipe(parseMarkdownRecipe(tabs[index]), index)
-    return createRecipe(recipe)
-  }
-
-  const handleSaveOne = async () => {
-    setSaveError('')
-    setSaving(true)
-    try {
-      const created = await saveOne(activeTab)
-      if (tabs.length === 1) {
-        navigate(`/recipe/${created.id}`)
-      } else {
-        const next = tabs.filter((_, i) => i !== activeTab)
-        setTabs(next)
-        setActiveTab(Math.min(activeTab, next.length - 1))
-      }
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save recipe.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleSaveAll = async () => {
-    setSaveError('')
-    setSaving(true)
-    try {
-      const results = []
-      for (let i = 0; i < tabs.length; i++) results.push(await saveOne(i))
-      navigate(`/recipe/${results[0].id}`)
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save recipes.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const updateTab = (value) => {
-    setTabs((prev) => prev.map((t, i) => i === activeTab ? value : t))
-    // clear stale match results for this tab when markdown changes
-    setMatchResults((prev) => {
-      if (!prev) return prev
-      const next = [...prev]
-      next[activeTab] = null
-      return next
-    })
-  }
-
   const selectMention = (ingredient) => {
-    const value = tabs[activeTab] ?? ''
-    // end of @query = @ position + 1 (for @) + query length — never read from DOM
     const endPos = mentionStart + 1 + (mentionQuery?.length ?? 0)
-    const newValue = value.slice(0, mentionStart) + ingredient.name + value.slice(endPos)
-    setTabs((prev) => prev.map((t, i) => (i === activeTab ? newValue : t)))
+    const newValue = ingredientsText.slice(0, mentionStart) + ingredient.name + ingredientsText.slice(endPos)
+    setIngredientsText(newValue)
     setIngredientOverrides((prev) => ({ ...prev, [ingredient.name]: ingredient.id }))
     setMentionQuery(null)
     const newCursor = mentionStart + ingredient.name.length
     setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus()
-        textareaRef.current.setSelectionRange(newCursor, newCursor)
+      if (ingredientsRef.current) {
+        ingredientsRef.current.focus()
+        ingredientsRef.current.setSelectionRange(newCursor, newCursor)
       }
     }, 0)
   }
 
-  const handleEditorChange = (e) => {
+  const handleIngredientsChange = (e) => {
     const value = e.target.value
-    updateTab(value)
-
+    setIngredientsText(value)
     const pos = e.target.selectionStart
     const textBefore = value.slice(0, pos)
     const atIndex = textBefore.lastIndexOf('@')
-
     if (
       atIndex !== -1 &&
       !textBefore.slice(atIndex + 1).includes('\n') &&
@@ -932,250 +653,330 @@ export default function AddRecipe() {
     }
   }
 
-  const handleEditorKeyDown = (e) => {
+  const handleIngredientsKeyDown = (e) => {
     if (mentionQuery === null || mentionMatches.length === 0) return
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setMentionIndex((i) => Math.min(i + 1, mentionMatches.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setMentionIndex((i) => Math.max(i - 1, 0))
-    } else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault()
-      selectMention(mentionMatches[mentionIndex])
-    } else if (e.key === 'Escape') {
-      setMentionQuery(null)
+    if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex((prev) => Math.min(prev + 1, mentionMatches.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex((prev) => Math.max(prev - 1, 0)) }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectMention(mentionMatches[mentionIndex]) }
+    else if (e.key === 'Escape') { setMentionQuery(null) }
+  }
+
+  const runMatching = async (parsed) => {
+    if (!parsed.length) return
+    setMatching(true)
+    try {
+      const items = parsed.map((p) => ({ name: p.name, amount: parseAmount(p.amount), unit: p.unit || '' }))
+      const data = await matchIngredients(items)
+      const enriched = (data.results || []).map((r, i) => ({ ...r, group_name: parsed[i]?.group_name ?? null }))
+      setMatchResults(enriched)
+    } catch {
+      // matching failure is non-fatal
+    } finally {
+      setMatching(false)
     }
   }
 
-  // ── Stage 1: input ──────────────────────────────────────────────────────
-
-  if (stage === 'input') {
-    return (
-      <section className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-3xl items-center">
-        <div className="w-full rounded border border-theme bg-mise-900/70 p-6 sm:p-8">
-          <header>
-            <h1 className="font-display text-3xl font-semibold text-mise-300">Add Recipe</h1>
-            <p className="mt-2 text-sm text-mise-500">
-              Paste recipe text or a URL — AI will format it into clean markdown you can edit before saving.
-            </p>
-          </header>
-
-          {parseError && (
-            <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-              {parseError}
-            </div>
-          )}
-
-          <div className="mt-6 space-y-5">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="raw-recipe-text">
-                Recipe Text
-              </label>
-              <textarea
-                id="raw-recipe-text"
-                rows={12}
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                placeholder="Paste a recipe, ingredients list, or any text..."
-                className={inputCls}
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="source-url">
-                Source URL
-              </label>
-              <input
-                id="source-url"
-                type="url"
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleParse() } }}
-                placeholder="https://example.com/recipe"
-                className={inputCls}
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={handleParse}
-              disabled={parsing || (!rawText.trim() && !sourceUrl.trim())}
-              className={`w-full py-3 text-base font-semibold ${primaryBtnCls}`}
-            >
-              {parsing ? 'Formatting recipe…' : 'Parse Recipe'}
-            </button>
-          </div>
-        </div>
-      </section>
-    )
+  const handleParseAndContinue = async () => {
+    if (!ingredientsText.trim()) { setParseError('Please enter some ingredients.'); return }
+    setParseError('')
+    setSaveError('')
+    setParsing(true)
+    try {
+      const data = await parseIngredients(ingredientsText.trim(), title.trim() || undefined)
+      const parsed = data.ingredients || []
+      setParsedIngredients(parsed)
+      // Auto-fill tags only if the user has not already typed anything
+      if (!tagsText.trim() && Array.isArray(data.suggested_tags) && data.suggested_tags.length > 0) {
+        setTagsText(data.suggested_tags.join(', '))
+      }
+      setMatchResults(null)
+      setStage('review')
+      await runMatching(parsed)
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : 'Failed to parse ingredients.')
+    } finally {
+      setParsing(false)
+    }
   }
 
-  // ── Stage 2: markdown editor ────────────────────────────────────────────
-
-  const multiTab = tabs.length > 1
-
-  const tabLabel = (md, i) => {
-    const titleLine = md.split('\n').find((l) => /^#\s+/.test(l))
-    return titleLine ? titleLine.replace(/^#\s+/, '').trim().slice(0, 32) : `Recipe ${i + 1}`
+  const handleStartOver = () => {
+    setStage('input')
+    setTitle('')
+    setServingsStr('1')
+    setIngredientsText('')
+    setInstructions('')
+    setNotes('')
+    setTagsText('')
+    setSourceUrl('')
+    setParseError('')
+    setParsedIngredients([])
+    setMatchResults(null)
+    setSaveError('')
+    setIngredientOverrides({})
+    setMentionQuery(null)
   }
 
-  // Kick off matching for the active tab when first entering the editor stage
-  if (stage === 'editor' && !matchedOnceRef.current[activeTab] && !matching) {
-    matchedOnceRef.current[activeTab] = true
-    runMatching(activeTab)
+  const handleSave = async () => {
+    if (!title.trim()) { setSaveError('Recipe name is required.'); return }
+    setSaveError('')
+    setSaving(true)
+    try {
+      const tags = tagsText.split(',').map((t) => t.trim()).filter(Boolean)
+      const ingredients = parsedIngredients.map((p, i) => ({
+        id: `ing-${Date.now()}-${i}`,
+        name: p.name,
+        amount: parseAmount(p.amount),
+        unit: p.unit || '',
+        ingredient_id: ingredientOverrides[p.name] ?? matchResults?.[i]?.match?.ingredient_id ?? null,
+        group_name: p.group_name ?? null,
+      }))
+      const recipe = await createRecipe({
+        title: title.trim(),
+        servings: parseInt(servingsStr, 10) || 1,
+        tags,
+        ingredients,
+        instructions: instructions.trim() || null,
+        notes: notes.trim() || null,
+        source_url: sourceUrl.trim() || null,
+        steps: [],
+      })
+      navigate(`/recipe/${recipe.id}`)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save recipe.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <section className="mx-auto w-full max-w-5xl">
-      <header>
-        <h1 className="font-display text-3xl font-semibold text-mise-300">
-          {multiTab ? 'Review Parsed Recipes' : 'Review Parsed Recipe'}
-        </h1>
-        <p className="mt-2 text-sm text-mise-500">
-          Edit the markdown below, then save. Changes here are reflected when saved.
-        </p>
-      </header>
-
-      {saveError && (
-        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-          {saveError}
+    <section className="mx-auto w-full max-w-3xl">
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl font-semibold text-mise-300">
+            {stage === 'input' ? 'Add Recipe' : 'Review & Save'}
+          </h1>
+          <p className="mt-2 text-sm text-mise-500">
+            {stage === 'input'
+              ? 'Fill in the recipe details, then parse your ingredient list.'
+              : 'Fix any unmatched ingredients below, then save.'}
+          </p>
         </div>
-      )}
-
-      {/* Tab strip */}
-      {multiTab && (
-        <div className="mt-6 flex gap-1 overflow-x-auto border-b border-mise-800 pb-px">
-          {tabs.map((md, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => handleTabChange(i)}
-              className={[
-                'shrink-0 rounded-t border border-b-0 px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
-                activeTab === i
-                  ? 'border-mise-700 bg-mise-900 text-mise-300'
-                  : 'border-transparent text-mise-500 hover:text-mise-300',
-              ].join(' ')}
-            >
-              {tabLabel(md, i)}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Markdown editor */}
-      <div className={`${multiTab ? 'mt-0' : 'mt-6'} relative`}>
-        <textarea
-          ref={textareaRef}
-          key={activeTab}
-          value={tabs[activeTab] ?? ''}
-          onChange={handleEditorChange}
-          onKeyDown={handleEditorKeyDown}
-          spellCheck={false}
-          className="w-full rounded border border-mise-800 bg-mise-900 px-4 py-3 font-mono text-sm leading-relaxed text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-          style={{ minHeight: '60vh', resize: 'vertical' }}
-        />
-        {mentionQuery !== null && mentionMatches.length > 0 && (
-          <ul
-            className="absolute z-30 max-h-48 w-72 overflow-y-auto rounded border border-mise-700 bg-mise-900 shadow-xl"
-            style={{ top: mentionCoords.top, left: mentionCoords.left }}
-          >
-            {mentionMatches.map((ing, i) => (
-              <li key={ing.id} className="border-b border-mise-800 last:border-none">
-                <button
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); selectMention(ing) }}
-                  className={[
-                    'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition focus-visible:outline-none',
-                    i === mentionIndex ? 'bg-mise-800/60' : 'hover:bg-mise-800/40',
-                  ].join(' ')}
-                >
-                  <span className="flex-1 text-mise-300">{ing.name}</span>
-                  <span className="shrink-0 text-xs text-mise-500">
-                    {ing.calories} cal · {ing.protein}g p
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Ingredient matching panel */}
-      {matching && (
-        <p className="mt-3 text-xs text-mise-500">Matching ingredients…</p>
-      )}
-      <MatchedIngredientList
-        matchResults={matchResults?.[activeTab] ?? null}
-        onRerun={async (resultIndex, savedIngredient) => {
-          if (resultIndex === undefined) {
-            matchedOnceRef.current[activeTab] = false
-            setMatchResults((prev) => { const n = prev ? [...prev] : []; n[activeTab] = null; return n })
-            await runMatching(activeTab)
-            return false
-          }
-
-          // If the caller already saved the ingredient and gave us its record,
-          // directly stamp the match — no need to re-run fuzzy matching.
-          if (savedIngredient?.id) {
-            setMatchResults((prev) => {
-              if (!prev?.[activeTab]) return prev
-              const next = [...prev]
-              const tabResults = [...next[activeTab]]
-              tabResults[resultIndex] = {
-                ...tabResults[resultIndex],
-                match: { ingredient_id: savedIngredient.id, name: savedIngredient.name, confidence: 100, score: 100 },
-              }
-              next[activeTab] = tabResults
-              return next
-            })
-            return true
-          }
-
-          const recipe = parseMarkdownRecipe(tabs[activeTab])
-          const ingredient = recipe.ingredients[resultIndex]
-          if (!ingredient) {
-            return false
-          }
-
-          try {
-            const data = await matchIngredients([
-              { name: ingredient.name, amount: ingredient.amount, unit: ingredient.unit },
-            ])
-
-            const refreshed = data?.results?.[0]
-            setMatchResults((prev) => {
-              if (!prev?.[activeTab]) {
-                return prev
-              }
-
-              const next = [...prev]
-              const tabResults = [...next[activeTab]]
-              tabResults[resultIndex] = refreshed ?? tabResults[resultIndex]
-              next[activeTab] = tabResults
-              return next
-            })
-
-            return Boolean(refreshed?.match)
-          } catch {
-            return false
-          }
-        }}
-      />
-
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        {multiTab && (
-          <button type="button" onClick={handleSaveAll} disabled={saving || matching} className={primaryBtnCls}>
-            {saving ? 'Saving…' : `Save All (${tabs.length})`}
+        {stage === 'review' && (
+          <button type="button" onClick={handleStartOver} className={`shrink-0 ${secondaryBtnCls}`}>
+            Start Over
           </button>
         )}
-        <button type="button" onClick={handleSaveOne} disabled={saving || matching} className={primaryBtnCls}>
-          {saving ? 'Saving…' : multiTab ? 'Save This One' : 'Save Recipe'}
-        </button>
-        <button type="button" onClick={handleStartOver} className={secondaryBtnCls}>
-          Start Over
-        </button>
+      </header>
+
+      {(parseError || saveError) && (
+        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          {parseError || saveError}
+        </div>
+      )}
+
+      <div className="mt-6 space-y-5">
+        {/* Title + Servings */}
+        <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-title">
+              Recipe Name
+            </label>
+            <input
+              id="recipe-title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Beef Tacos"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-servings">
+              Servings
+            </label>
+            <input
+              id="recipe-servings"
+              type="number"
+              min="1"
+              value={servingsStr}
+              onChange={(e) => setServingsStr(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        {/* Tags + Source URL */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-tags">
+              Tags <span className="font-normal text-mise-600">(comma-separated)</span>
+            </label>
+            <input
+              id="recipe-tags"
+              type="text"
+              value={tagsText}
+              onChange={(e) => setTagsText(e.target.value)}
+              placeholder="high protein, meal prep"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-source">
+              Source URL <span className="font-normal text-mise-600">(optional)</span>
+            </label>
+            <input
+              id="recipe-source"
+              type="url"
+              value={sourceUrl}
+              onChange={(e) => setSourceUrl(e.target.value)}
+              placeholder="https://..."
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        {/* Ingredients with @ autocomplete */}
+        <div className="relative">
+          <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-ingredients">
+            Ingredients
+            <span className="ml-2 text-xs font-normal text-mise-600">Type @ to link to ingredient database</span>
+          </label>
+          <textarea
+            id="recipe-ingredients"
+            ref={ingredientsRef}
+            rows={8}
+            value={ingredientsText}
+            onChange={handleIngredientsChange}
+            onKeyDown={handleIngredientsKeyDown}
+            placeholder={'1 cup flour\n2 eggs\n1/2 tsp salt'}
+            className={inputCls}
+          />
+          {mentionQuery !== null && mentionMatches.length > 0 && (
+            <ul
+              className="absolute z-30 max-h-48 w-72 overflow-y-auto rounded border border-mise-700 bg-mise-900 shadow-xl"
+              style={{ top: mentionCoords.top + 32, left: mentionCoords.left }}
+            >
+              {mentionMatches.map((ing, i) => (
+                <li key={ing.id} className="border-b border-mise-800 last:border-none">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); selectMention(ing) }}
+                    className={[
+                      'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition focus-visible:outline-none',
+                      i === mentionIndex ? 'bg-mise-800/60' : 'hover:bg-mise-800/40',
+                    ].join(' ')}
+                  >
+                    <span className="flex-1 text-mise-300">{ing.name}</span>
+                    <span className="shrink-0 text-xs text-mise-500">{ing.calories} cal · {ing.protein}g p</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Instructions */}
+        <MarkdownField
+          id="recipe-instructions"
+          label="Instructions"
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          rows={8}
+          placeholder={'1. Preheat oven to 375°F\n2. Mix dry ingredients\n3. Add wet ingredients and stir until combined'}
+          textareaClassName={inputCls}
+        />
+
+        {/* Notes */}
+        <MarkdownField
+          id="recipe-notes"
+          label="Notes"
+          labelExtra="(optional)"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          placeholder="Meal prep tips, storage, substitutions..."
+          textareaClassName={inputCls}
+        />
+      </div>
+
+      {/* Review stage: ingredient match panel */}
+      {stage === 'review' && (
+        <>
+          {matching && <p className="mt-4 text-xs text-mise-500">Matching ingredients…</p>}
+          <MatchedIngredientList
+            matchResults={matchResults}
+            onRerun={async (resultIndex, savedIngredient) => {
+              if (resultIndex === undefined) {
+                await runMatching(parsedIngredients)
+                return false
+              }
+              if (savedIngredient?.id) {
+                setMatchResults((prev) => {
+                  if (!prev) return prev
+                  const next = [...prev]
+                  next[resultIndex] = {
+                    ...next[resultIndex],
+                    match: { ingredient_id: savedIngredient.id, name: savedIngredient.name, confidence: 100, score: 100 },
+                  }
+                  return next
+                })
+                return true
+              }
+              const p = parsedIngredients[resultIndex]
+              if (!p) return false
+              try {
+                const data = await matchIngredients([{ name: p.name, amount: parseAmount(p.amount), unit: p.unit || '' }])
+                const r = data?.results?.[0]
+                if (r) {
+                  setMatchResults((prev) => {
+                    if (!prev) return prev
+                    const next = [...prev]
+                    next[resultIndex] = { ...next[resultIndex], ...r }
+                    return next
+                  })
+                  return Boolean(r?.match)
+                }
+              } catch {
+                // non-fatal
+              }
+              return false
+            }}
+          />
+        </>
+      )}
+
+      {/* Action buttons */}
+      <div className="mt-6 flex gap-3">
+        {stage === 'input' ? (
+          <button
+            type="button"
+            onClick={handleParseAndContinue}
+            disabled={parsing || !ingredientsText.trim()}
+            className={`flex-1 py-3 text-base font-semibold ${primaryBtnCls}`}
+          >
+            {parsing ? 'Parsing Ingredients…' : 'Parse Ingredients & Continue →'}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !title.trim()}
+              className={`flex-1 py-3 text-base font-semibold ${primaryBtnCls}`}
+            >
+              {saving ? 'Saving Recipe…' : 'Save Recipe'}
+            </button>
+            <button
+              type="button"
+              onClick={handleParseAndContinue}
+              disabled={parsing || !ingredientsText.trim()}
+              className={secondaryBtnCls}
+              title="Re-parse ingredients after editing"
+            >
+              {parsing ? 'Parsing…' : 'Re-parse'}
+            </button>
+          </>
+        )}
       </div>
     </section>
   )

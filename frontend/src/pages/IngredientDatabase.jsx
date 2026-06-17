@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createIngredient, deleteIngredient, getIngredients, searchIngredients, updateIngredient } from '../api/client.js'
+import { blockIngredient, createIngredient, deleteIngredient, getIngredients, searchIngredients, updateIngredient } from '../api/client.js'
 
 const secondaryButtonClassName =
   'rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
@@ -50,6 +50,24 @@ function formatServingMacroLabel(result) {
   return `Per ${formatScaledValue(servingGrams)}g: ${formatScaledValue(result.calories * factor)} cal · ${formatScaledValue(result.protein * factor)}g protein · ${formatScaledValue(result.carbs * factor)}g carbs · ${formatScaledValue(result.fat * factor)}g fat`
 }
 
+function formatOffServingText(result) {
+  const servingCandidates = [
+    result.serving_grams,
+    result.serving_size_g,
+    result.serving_size,
+    result.amount_grams,
+  ]
+
+  for (const candidate of servingCandidates) {
+    const numeric = Number(candidate)
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return `Per serving: ${formatScaledValue(numeric)}g`
+    }
+  }
+
+  return 'Per 100g'
+}
+
 
 
 function IngredientDatabase() {
@@ -68,6 +86,9 @@ function IngredientDatabase() {
   const [editingId, setEditingId] = useState(null)
   const [editDraft, setEditDraft] = useState({})
   const [editSaving, setEditSaving] = useState(false)
+
+  // Macro details expansion state — only one row expanded at a time
+  const [expandedId, setExpandedId] = useState(null)
 
   const [ingredients, setIngredients] = useState([])
   const [loading, setLoading] = useState(true)
@@ -199,6 +220,16 @@ function IngredientDatabase() {
     }
   }
 
+  const handleBlockResult = async (result) => {
+    if (!result.source_id) return
+    setApiResults((prev) => prev.filter((r) => r.source_id !== result.source_id || r.source !== result.source))
+    try {
+      await blockIngredient({ name: result.name, source: result.source, source_id: result.source_id })
+    } catch {
+      // optimistic removal stands
+    }
+  }
+
   const handleAddManually = () => {
     setDropdownOpen(false)
     setDraft({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g' })
@@ -322,15 +353,20 @@ function IngredientDatabase() {
         {dropdownOpen && (apiResults.length > 0 || query.trim().length >= 2) && (
           <ul className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded border border-mise-800 bg-mise-900 shadow-xl">
             {apiResults.map((result, i) => (
-              <li key={i} className="border-b border-mise-800 last:border-none">
+              <li key={i} className="flex items-center border-b border-mise-800 last:border-none">
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleSelectResult(result)}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-mise-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                  className="min-w-0 flex-1 px-4 py-2.5 text-left transition hover:bg-mise-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
                 >
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <div className="flex items-center gap-2">
                     <span className="text-sm text-mise-300">{result.name}</span>
+                    {result.source_url && (
+                      <a href={result.source_url} target="_blank" rel="noopener noreferrer" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} className="text-mise-600 hover:text-mise-400" title="View source">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      </a>
+                    )}
                     {result.source === 'usda' && (
                       <span className="shrink-0 rounded border border-sky-500/30 bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">USDA</span>
                     )}
@@ -338,10 +374,25 @@ function IngredientDatabase() {
                       <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">OFF</span>
                     )}
                   </div>
-                  <span className="shrink-0 text-xs text-mise-500">
-                    {formatServingMacroLabel(result)}
-                  </span>
+                  {result.source === 'openfoodfacts' && (
+                    <p className="mt-0.5 text-[11px] text-mise-500">
+                      <span>{formatOffServingText(result)}</span>
+                      {result.barcode && <span className="ml-2 text-mise-600">Barcode: {result.barcode}</span>}
+                    </p>
+                  )}
+                  <span className="text-xs text-mise-500">{formatServingMacroLabel(result)}</span>
                 </button>
+                {result.source_id && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleBlockResult(result)}
+                    className="shrink-0 px-3 py-2.5 text-[10px] text-mise-600 transition hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                    title="Block this result"
+                  >
+                    Block
+                  </button>
+                )}
               </li>
             ))}
             {searching && apiResults.length === 0 && (
@@ -487,146 +538,176 @@ function IngredientDatabase() {
             <tr>
               <th scope="col" className="px-4 py-3 font-medium">Name</th>
               <th scope="col" className="px-4 py-3 font-medium">Calories</th>
-              <th scope="col" className="px-4 py-3 font-medium">Protein</th>
-              <th scope="col" className="px-4 py-3 font-medium">Carbs</th>
-              <th scope="col" className="px-4 py-3 font-medium">Fat</th>
-              <th scope="col" className="px-4 py-3 font-medium">Unit</th>
               <th scope="col" className="px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-mise-800 text-mise-300">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-mise-500">Loading ingredients…</td>
+                <td colSpan={3} className="px-4 py-8 text-center text-mise-500">Loading ingredients…</td>
               </tr>
             ) : filteredIngredients.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-mise-500">
+                <td colSpan={3} className="px-4 py-8 text-center text-mise-500">
                   {query.trim() ? `No saved ingredients match "${query}".` : 'No ingredients yet.'}
                 </td>
               </tr>
             ) : (
               filteredIngredients.map((ingredient) => (
-                ingredient.id === editingId ? (
-                  <tr key={ingredient.id} className="bg-mise-800/20">
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="text"
-                        value={editDraft.name}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
-                        className={fieldCls}
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={editDraft.calories}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, calories: e.target.value }))}
-                        className={fieldCls}
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={editDraft.protein}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, protein: e.target.value }))}
-                        className={fieldCls}
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={editDraft.carbs}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, carbs: e.target.value }))}
-                        className={fieldCls}
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={editDraft.fat}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, fat: e.target.value }))}
-                        className={fieldCls}
-                      />
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-mise-400">{ingredient.unit}</td>
-                    <td className="whitespace-nowrap px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={handleSaveEdit}
-                          disabled={editSaving}
-                          className="rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                        >
-                          {editSaving ? 'Saving…' : 'Save'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCancelEdit}
-                          className={secondaryButtonClassName}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={ingredient.id} className="hover:bg-mise-800/30">
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {ingredient.source === 'off' && ingredient.barcode ? (
-                          <a
-                            href={`https://world.openfoodfacts.org/product/${ingredient.barcode}`}
-                            target="_blank"
-                            rel="noreferrer noopener"
-                            className="font-medium text-mise-300 underline-offset-2 hover:text-mise-200 hover:underline"
+                <>
+                  {ingredient.id === editingId ? (
+                    <tr key={ingredient.id} className="bg-mise-800/20">
+                      <td colSpan={3} className="px-4 py-3">
+                        <div className="grid gap-3 sm:grid-cols-6">
+                          <div className="sm:col-span-2">
+                            <label className="mb-1 block text-xs text-mise-500">Name</label>
+                            <input
+                              type="text"
+                              value={editDraft.name}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                              className={fieldCls}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-mise-500">Calories</label>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              value={editDraft.calories}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, calories: e.target.value }))}
+                              className={fieldCls}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-mise-500">Protein (g)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              value={editDraft.protein}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, protein: e.target.value }))}
+                              className={fieldCls}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-mise-500">Carbs (g)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              value={editDraft.carbs}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, carbs: e.target.value }))}
+                              className={fieldCls}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-mise-500">Fat (g)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              value={editDraft.fat}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, fat: e.target.value }))}
+                              className={fieldCls}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-mise-500">Unit</label>
+                            <input
+                              type="text"
+                              value={editDraft.unit || ingredient.unit}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, unit: e.target.value }))}
+                              className={fieldCls}
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSaveEdit}
+                            disabled={editSaving}
+                            className="rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
                           >
-                            {ingredient.name}
-                          </a>
-                        ) : (
-                          <span className="font-medium text-mise-300">{ingredient.name}</span>
-                        )}
-                        {ingredient.source === 'usda' && (
-                          <span className="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-400">USDA</span>
-                        )}
-                        {ingredient.source === 'off' && (
-                          <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">OFF</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">{ingredient.calories}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{ingredient.protein}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{ingredient.carbs}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{ingredient.fat}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-mise-400">{ingredient.unit}</td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleStartEdit(ingredient)}
-                          className={secondaryButtonClassName}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteIngredient(ingredient.id)}
-                          className={destructiveButtonClassName}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
+                            {editSaving ? 'Saving…' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            className={secondaryButtonClassName}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      <tr key={ingredient.id} className="hover:bg-mise-800/30">
+                        <td className="whitespace-nowrap p-0 cursor-pointer">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(expandedId === ingredient.id ? null : ingredient.id)}
+                            className="flex w-full items-center gap-2 px-4 py-3 text-left font-medium text-mise-300 transition hover:text-mise-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                          >
+                            {ingredient.source === 'off' && ingredient.barcode ? (
+                              <a
+                                href={`https://world.openfoodfacts.org/product/${ingredient.barcode}`}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-mise-300 underline-offset-2 hover:text-mise-200 hover:underline"
+                              >
+                                {ingredient.name}
+                              </a>
+                            ) : (
+                              <span>{ingredient.name}</span>
+                            )}
+                            {ingredient.source === 'usda' && (
+                              <span className="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-400">USDA</span>
+                            )}
+                            {ingredient.source === 'off' && (
+                              <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">OFF</span>
+                            )}
+                          </button>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">{ingredient.calories}</td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(ingredient)}
+                              className={secondaryButtonClassName}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteIngredient(ingredient.id)}
+                              className={destructiveButtonClassName}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {expandedId === ingredient.id && (
+                        <tr className="bg-mise-800/10 hover:bg-mise-800/20">
+                          <td colSpan={3} className="px-4 py-3">
+                            <div className="space-y-1.5 text-xs text-mise-500">
+                              <div className="flex gap-8">
+                                <div>Protein: <span className="font-medium text-mise-400">{ingredient.protein}g</span></div>
+                                <div>Carbs: <span className="font-medium text-mise-400">{ingredient.carbs}g</span></div>
+                                <div>Fat: <span className="font-medium text-mise-400">{ingredient.fat}g</span></div>
+                                <div>Unit: <span className="font-medium text-mise-400">{ingredient.unit}</span></div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )}
+                </>
               ))
             )}
           </tbody>

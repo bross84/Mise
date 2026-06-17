@@ -9,6 +9,7 @@ class IngredientItem(BaseModel):
     amount: float
     unit: str
     ingredient_id: Optional[int] = None
+    group_name: Optional[str] = None
 
 
 class StepItem(BaseModel):
@@ -25,6 +26,8 @@ class RecipeBase(BaseModel):
     ingredients: list[IngredientItem] = []
     steps: list[StepItem] = []
     notes: Optional[str] = None
+    instructions: Optional[str] = None
+    source_url: Optional[str] = None
     rating: Optional[int] = None
     thumbs: Optional[str] = None
     image_url: Optional[str] = None
@@ -41,6 +44,8 @@ class RecipeUpdate(BaseModel):
     ingredients: Optional[list[IngredientItem]] = None
     steps: Optional[list[StepItem]] = None
     notes: Optional[str] = None
+    instructions: Optional[str] = None
+    source_url: Optional[str] = None
     rating: Optional[int] = None
     thumbs: Optional[str] = None
     image_url: Optional[str] = None

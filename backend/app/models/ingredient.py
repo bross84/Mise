@@ -15,4 +15,5 @@ class Ingredient(Base):
     unit = Column(String, default="per 100g")
     source = Column(String, default="local", server_default="local")
     barcode = Column(String, nullable=True)
+    serving_grams = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
