@@ -1,0 +1,19 @@
+services:
+  backend:
+    image: ghcr.io/bross84/mise-backend:latest
+    volumes:
+      - mise_data:/app/data
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/bross84/mise-frontend:latest
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mise_data:
