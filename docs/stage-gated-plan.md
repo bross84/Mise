@@ -1,5 +1,11 @@
 # Stage-Gated Plan
 
+## 2026-06-17
+
+### Stage: Implemented
+- "Mise en Place" title in both the mobile fixed header and the sidebar in App.jsx is now a `<Link to="/">` that navigates to the Recipe Browser from any page. Hover transitions to a slightly lighter text color to signal interactivity; no underline style used.
+- Action button row in RecipeDetail.jsx is now `sticky top-16 md:top-0 z-20` so Edit/Delete/Save/Cancel/Back buttons remain visible without scrolling back to the top of a long recipe. A semi-transparent blurred background (`bg-mise-950/95 backdrop-blur border-b border-mise-800`) prevents content from bleeding through.
+
 ## 2026-06-16
 
 ### Stage: Implemented

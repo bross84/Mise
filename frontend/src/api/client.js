@@ -60,6 +60,13 @@ export function parseRecipe(data) {
   })
 }
 
+export function importMarkdown(markdown) {
+  return request('/recipes/import-markdown', {
+    method: 'POST',
+    body: JSON.stringify({ markdown }),
+  })
+}
+
 export function parseIngredients(text, recipeName) {
   return request('/recipes/parse-ingredients', {
     method: 'POST',

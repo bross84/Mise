@@ -1,5 +1,10 @@
 # Plan
 
+## 2026-06-17
+
+- Wrapped both "Mise en Place" title elements in App.jsx (mobile header and sidebar) in `<Link to="/">` components so the app title navigates to the Recipe Browser from any page; hover state transitions to a slightly lighter text color to indicate interactivity without using underline styling.
+- Made the action button bar (Back / Edit / Delete / Save / Cancel) in RecipeDetail.jsx `sticky` so it remains visible at the top of the viewport while scrolling through a long recipe; uses `top-16 md:top-0` to clear the fixed mobile header, with a `bg-mise-950/95 backdrop-blur border-b border-mise-800` background to prevent content from showing through.
+
 ## 2026-06-16
 
 - Updated `/api/ingredients/search` routing so explicit `external_source` requests (`usda` or `openfoodfacts`) bypass local DB candidate/quality filtering and go directly to the selected external fetch path.

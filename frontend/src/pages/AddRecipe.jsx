@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { blockIngredient, createIngredient, createRecipe, getIngredients, matchIngredients, parseIngredients, searchIngredients } from '../api/client.js'
 import { MarkdownField } from '../components/MarkdownText.jsx'
 
@@ -573,17 +573,20 @@ function MatchedIngredientList({ matchResults, onRerun }) {
 
 export default function AddRecipe() {
   const navigate = useNavigate()
+  const location = useLocation()
+
+  const prefill = location.state?.prefill ?? null
 
   const [stage, setStage] = useState('input') // 'input' | 'review'
 
   // Form fields
-  const [title, setTitle] = useState('')
-  const [servingsStr, setServingsStr] = useState('1')
-  const [ingredientsText, setIngredientsText] = useState('')
-  const [instructions, setInstructions] = useState('')
-  const [notes, setNotes] = useState('')
-  const [tagsText, setTagsText] = useState('')
-  const [sourceUrl, setSourceUrl] = useState('')
+  const [title, setTitle] = useState(prefill?.title ?? '')
+  const [servingsStr, setServingsStr] = useState(prefill ? String(prefill.servings ?? 1) : '1')
+  const [ingredientsText, setIngredientsText] = useState(prefill?.ingredients_text ?? '')
+  const [instructions, setInstructions] = useState(prefill?.instructions ?? '')
+  const [notes, setNotes] = useState(prefill?.notes ?? '')
+  const [tagsText, setTagsText] = useState(prefill?.tags?.join(', ') ?? '')
+  const [sourceUrl, setSourceUrl] = useState(prefill?.source_url ?? '')
 
   // AI parsing
   const [parsing, setParsing] = useState(false)
@@ -753,11 +756,13 @@ export default function AddRecipe() {
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-semibold text-mise-300">
-            {stage === 'input' ? 'Add Recipe' : 'Review & Save'}
+            {stage === 'input' ? (prefill ? 'Import Recipe' : 'Add Recipe') : 'Review & Save'}
           </h1>
           <p className="mt-2 text-sm text-mise-500">
             {stage === 'input'
-              ? 'Fill in the recipe details, then parse your ingredient list.'
+              ? prefill
+                ? 'Fields pre-filled from import — review and edit before parsing ingredients.'
+                : 'Fill in the recipe details, then parse your ingredient list.'
               : 'Fix any unmatched ingredients below, then save.'}
           </p>
         </div>

@@ -1,10 +1,13 @@
+import io
 import json
 import re
-from datetime import datetime
+import zipfile
+from datetime import date, datetime
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -74,6 +77,73 @@ def _extract_jsonld_recipe(html: str) -> Optional[str]:
         except (json.JSONDecodeError, KeyError):
             continue
     return None
+
+
+def _slugify(title: str) -> str:
+    """Lowercase, spaces → hyphens, strip non-word characters, collapse repeated hyphens."""
+    s = (title or "recipe").lower().strip()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[\s_]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s or "recipe"
+
+
+def _recipe_to_markdown(recipe: Recipe) -> str:
+    lines: list[str] = []
+
+    lines.append(f"# {recipe.title or 'Untitled Recipe'}")
+    lines.append("")
+    lines.append(f"**Servings:** {recipe.servings or 1}")
+    lines.append("")
+
+    ingredients = recipe.ingredients or []
+    if ingredients:
+        lines.append("## Ingredients")
+        lines.append("")
+        current_group: str | None = None
+        for ing in ingredients:
+            group = (ing.get("group_name") or "").strip() or None
+            if group and group != current_group:
+                current_group = group
+                lines.append(f"### {group}")
+                lines.append("")
+            amount_raw = ing.get("amount")
+            unit = (ing.get("unit") or "").strip()
+            name = (ing.get("name") or "").strip()
+            parts: list[str] = []
+            if amount_raw is not None:
+                try:
+                    amt = float(amount_raw)
+                    if amt > 0:
+                        parts.append(str(int(amt)) if amt == int(amt) else str(amt))
+                except (ValueError, TypeError):
+                    pass
+            if unit:
+                parts.append(unit)
+            if name:
+                parts.append(name)
+            lines.append(f"- {' '.join(parts)}" if parts else f"- {name}")
+        lines.append("")
+
+    if recipe.instructions:
+        lines.append("## Instructions")
+        lines.append("")
+        lines.append(recipe.instructions.strip())
+        lines.append("")
+
+    if recipe.notes:
+        lines.append("## Notes")
+        lines.append("")
+        lines.append(recipe.notes.strip())
+        lines.append("")
+
+    tags = recipe.tags or []
+    if tags:
+        lines.append(f"**Tags:** {', '.join(tags)}")
+    if recipe.source_url:
+        lines.append(f"**Source:** {recipe.source_url}")
+
+    return "\n".join(lines).strip() + "\n"
 
 
 @router.post("/parse", response_model=ParseResponse)
@@ -318,6 +388,76 @@ class MacrosResponse(BaseModel):
     breakdown: list[IngredientBreakdown] = []
 
 
+IMPORT_MARKDOWN_SYSTEM_PROMPT = """You are a recipe data extractor. Given a markdown recipe document, extract the following and return ONLY a JSON object with these exact keys:
+
+{
+  "title": "string — the recipe name (required)",
+  "servings": integer — number of servings (default 1 if not specified),
+  "ingredients_text": "string — all ingredient lines, one per line, preserving any section/group headers exactly as written (e.g. '## Sauce', '**For the marinade:**')",
+  "instructions": "string — the full instructions section as markdown, do not summarize, rewrite, or shorten",
+  "notes": "string or null — any notes, tips, or storage section; null if absent",
+  "tags": ["array of lowercase tag strings if present in the document, otherwise empty array"],
+  "source_url": "string or null — source URL if present, otherwise null"
+}
+
+If you cannot identify BOTH a clear recipe title AND at least one ingredient line in the document, return instead:
+{"error": "brief explanation of what is missing or why this does not appear to be a recipe"}
+
+Return ONLY valid JSON. No explanation, no markdown, no code fences."""
+
+
+class ImportMarkdownRequest(BaseModel):
+    markdown: str
+
+
+class ImportMarkdownResponse(BaseModel):
+    title: str
+    servings: int
+    ingredients_text: str
+    instructions: str
+    notes: str
+    tags: list[str]
+    source_url: Optional[str]
+
+
+@router.post("/import-markdown", response_model=ImportMarkdownResponse)
+async def import_markdown(payload: ImportMarkdownRequest):
+    if not payload.markdown.strip():
+        raise HTTPException(status_code=422, detail="Markdown content is required.")
+
+    try:
+        raw = await AIService().complete_with_system(
+            IMPORT_MARKDOWN_SYSTEM_PROMPT,
+            f"Extract recipe data from the following markdown:\n\n{payload.markdown}",
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE).strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI returned invalid JSON: {exc}") from exc
+
+    if "error" in data:
+        raise HTTPException(status_code=422, detail=str(data["error"]))
+
+    missing = [k for k in ("title", "ingredients_text") if not str(data.get(k, "")).strip()]
+    if missing:
+        raise HTTPException(status_code=422, detail=f"Could not extract required fields: {', '.join(missing)}")
+
+    return ImportMarkdownResponse(
+        title=str(data.get("title", "")).strip(),
+        servings=int(data.get("servings") or 1),
+        ingredients_text=str(data.get("ingredients_text", "")).strip(),
+        instructions=str(data.get("instructions", "")).strip(),
+        notes=str(data.get("notes") or "").strip(),
+        tags=[str(t).lower().strip() for t in (data.get("tags") or []) if str(t).strip()],
+        source_url=str(data["source_url"]).strip() if data.get("source_url") else None,
+    )
+
+
 @router.get("/{recipe_id}/macros", response_model=MacrosResponse)
 def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
@@ -392,9 +532,45 @@ def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/export-all")
+def export_all_recipes(db: Session = Depends(get_db)):
+    recipes = db.query(Recipe).order_by(Recipe.created_at.asc()).all()
+    buf = io.BytesIO()
+    used: set[str] = set()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for recipe in recipes:
+            base = _slugify(recipe.title or "recipe")
+            slug = base
+            counter = 2
+            while slug in used:
+                slug = f"{base}-{counter}"
+                counter += 1
+            used.add(slug)
+            zf.writestr(f"{slug}.md", _recipe_to_markdown(recipe))
+    filename = f"mise-recipes-{date.today().isoformat()}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("", response_model=list[RecipeResponse])
 def list_recipes(db: Session = Depends(get_db)):
     return db.query(Recipe).order_by(Recipe.created_at.desc()).all()
+
+
+@router.get("/{recipe_id}/export")
+def export_recipe(recipe_id: int, db: Session = Depends(get_db)):
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    slug = _slugify(recipe.title or "recipe")
+    return Response(
+        content=_recipe_to_markdown(recipe).encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{slug}.md"'},
+    )
 
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)

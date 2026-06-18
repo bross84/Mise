@@ -280,23 +280,24 @@ async def search_ingredients(
         except Exception:
             pass
 
+    def _dedup_by_fdc_id(results: list[SearchResult]) -> list[SearchResult]:
+        seen_ids: set[str] = set()
+        out: list[SearchResult] = []
+        for r in results:
+            key = r.source_id or r.name.lower().strip()
+            if key in seen_ids:
+                continue
+            seen_ids.add(key)
+            out.append(r)
+        return out
+
     if external_source == "usda":
-        return SearchResponse(results=_filter_blocked(usda_results)[:15])
+        return SearchResponse(results=_filter_blocked(_dedup_by_fdc_id(usda_results))[:15])
     if external_source == "openfoodfacts":
-        return SearchResponse(results=_filter_blocked(off_results)[:15])
+        return SearchResponse(results=_filter_blocked(_dedup_by_fdc_id(off_results))[:15])
 
-    # USDA first, then OFF; dedup by normalised name, cap at 15
-    seen: set[str] = set()
-    merged: list[SearchResult] = []
-    for result in usda_results + off_results:
-        key = result.name.lower().strip()
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(result)
-        if len(merged) == 15:
-            break
-
+    # USDA first, then OFF; dedup by source_id (fdcId / barcode), cap at 15
+    merged = _dedup_by_fdc_id(usda_results + off_results)[:15]
     return SearchResponse(results=_filter_blocked(merged))
 
 

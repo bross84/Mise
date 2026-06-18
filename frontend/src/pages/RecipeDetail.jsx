@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Pencil, Share2, Star, Trash2, X } from 'lucide-react'
+import { Download, Pencil, Share2, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import {
   blockIngredient,
@@ -819,7 +819,7 @@ function RecipeDetail() {
 
   return (
     <section className="mx-auto w-full max-w-5xl">
-      <div className="flex items-center justify-between gap-3">
+      <div className="sticky top-16 md:top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex items-center justify-between gap-3">
         <Link
           to="/"
           className="inline-flex items-center rounded border border-mise-800 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
@@ -867,6 +867,15 @@ function RecipeDetail() {
                 <Trash2 size={15} />
                 Delete Recipe
               </button>
+              <a
+                href={`${API_BASE_URL}/recipes/${encodeURIComponent(id)}/export`}
+                download
+                className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                aria-label="Export recipe as markdown"
+              >
+                <Download size={14} />
+                Export
+              </a>
               <button
                 type="button"
                 onClick={handleShareRecipeLink}
