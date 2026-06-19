@@ -212,6 +212,9 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
   const [savingIndex, setSavingIndex] = useState(null)
   const [error, setError] = useState('')
   const timerRef = useRef(null)
+  const [customMode, setCustomMode] = useState(false)
+  const [customForm, setCustomForm] = useState({ name: '', calories: '', protein: '', carbs: '', fat: '' })
+  const [savingCustom, setSavingCustom] = useState(false)
 
   const handleBlock = async (result, i) => {
     if (!result.source_id) return
@@ -344,6 +347,36 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
     }
   }
 
+  const openCustomForm = () => {
+    setCustomForm({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '' })
+    setCustomMode(true)
+  }
+
+  const handleSaveCustom = async (e) => {
+    e.preventDefault()
+    const name = customForm.name.trim()
+    if (!name) return
+    setSavingCustom(true)
+    setError('')
+    try {
+      const saved = await createIngredient({
+        name,
+        calories: Number(customForm.calories) || 0,
+        protein: Number(customForm.protein) || 0,
+        carbs: Number(customForm.carbs) || 0,
+        fat: Number(customForm.fat) || 0,
+        unit: 'per 100g',
+        source: 'local',
+      })
+      onSelect(saved)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save ingredient.')
+    } finally {
+      setSavingCustom(false)
+    }
+  }
+
   return (
     <div className="rounded border border-mise-700/60 bg-mise-950 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -402,26 +435,81 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
             <button
               type="button"
               onClick={handleSearchUsda}
-              className="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="rounded border border-sky-500/60 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-500 hover:bg-sky-500/20 dark:border-sky-500/40 dark:text-sky-200 dark:hover:border-sky-400/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               Search USDA
             </button>
             <button
               type="button"
               onClick={handleSearchOpenFoodFacts}
-              className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="rounded border border-emerald-500/60 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:border-emerald-500 hover:bg-emerald-500/20 dark:border-emerald-500/40 dark:text-emerald-200 dark:hover:border-emerald-400/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               Search Open Food Facts
             </button>
           </div>
-          <button
-            type="button"
-            onClick={handleSearchByBarcode}
-            className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-          >
-            Search by barcode
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleSearchByBarcode}
+              className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Search by barcode
+            </button>
+            <button
+              type="button"
+              onClick={openCustomForm}
+              className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Add custom
+            </button>
+          </div>
         </div>
+      )}
+
+      {customMode && (
+        <form onSubmit={handleSaveCustom} className="mt-2 space-y-2 rounded border border-mise-800 bg-mise-900/60 p-3">
+          <p className="text-xs font-medium text-mise-500">Custom ingredient <span className="font-normal">(macros per 100g)</span></p>
+          <input
+            type="text"
+            value={customForm.name}
+            onChange={(e) => setCustomForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Name"
+            required
+            className={inputCls}
+          />
+          <div className="grid grid-cols-4 gap-2">
+            {[['calories', 'Cal'], ['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat']].map(([field, label]) => (
+              <div key={field}>
+                <label className="mb-1 block text-[10px] text-mise-500">{label}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={customForm[field]}
+                  onChange={(e) => setCustomForm((f) => ({ ...f, [field]: e.target.value }))}
+                  placeholder="0"
+                  className={inputCls}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={savingCustom || !customForm.name.trim()}
+              className="rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              {savingCustom ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomMode(false)}
+              className="rounded border border-mise-800 px-3 py-1.5 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
 
       {results.length > 0 && (
@@ -440,10 +528,10 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
                     </a>
                   )}
                   {r.source === 'usda' && (
-                    <span className="rounded-full border border-sky-500/30 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">USDA</span>
+                    <span className="rounded-full border border-sky-500/40 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-200">USDA</span>
                   )}
                   {r.source === 'openfoodfacts' && (
-                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">OFF</span>
+                    <span className="rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-200">OFF</span>
                   )}
                   {savingIndex === i && (
                     <span className="text-[10px] text-mise-400">Selecting...</span>

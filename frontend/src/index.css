@@ -34,6 +34,41 @@
   }
 }
 
+/* ── Scrollbars ── */
+/* Standard (Firefox 64+, Chrome 121+) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--mise-800)) rgb(var(--mise-950));
+}
+
+/* WebKit/Blink (Chrome, Brave, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgb(var(--mise-950));
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--mise-800));
+  border-radius: 4px;
+  border: 2px solid rgb(var(--mise-950));
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--mise-500));
+}
+
+/* ── Number input spinners (WebKit/Blink) ── */
+/* Give spinners a background matching the dark theme so they don't look default-OS white.
+   Arrow icon color is OS-rendered and can't be changed via CSS; background is what we control. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  background-color: rgb(var(--mise-800));
+  border-left: 1px solid rgba(var(--mise-300) / 0.12);
+  cursor: pointer;
+}
+
 /* ── Theme-aware border ── */
 /* Replaces border-white/10 (dark-only) with a class that works in both modes */
 @layer utilities {

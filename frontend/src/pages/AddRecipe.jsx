@@ -313,25 +313,34 @@ function IngredientSearchPanel({ ingredientName, onSaved, onClose }) {
             <button
               type="button"
               onClick={handleSearchUsda}
-              className="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="rounded border border-sky-500/60 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-500 hover:bg-sky-500/20 dark:border-sky-500/40 dark:text-sky-200 dark:hover:border-sky-400/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               Search USDA
             </button>
             <button
               type="button"
               onClick={handleSearchOpenFoodFacts}
-              className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="rounded border border-emerald-500/60 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:border-emerald-500 hover:bg-emerald-500/20 dark:border-emerald-500/40 dark:text-emerald-200 dark:hover:border-emerald-400/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               Search Open Food Facts
             </button>
           </div>
-          <button
-            type="button"
-            onClick={handleSearchByBarcode}
-            className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-          >
-            Search by barcode
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleSearchByBarcode}
+              className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Search by barcode
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomDraft({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g' })}
+              className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Add custom
+            </button>
+          </div>
         </div>
       )}
 
@@ -483,8 +492,11 @@ function MatchedIngredientList({ matchResults, onRerun }) {
   const [skippedIndexes, setSkippedIndexes] = useState([])
 
   useEffect(() => {
-    setAcceptedIndexes([])
-    setSkippedIndexes([])
+    // Only reset on a full match reset (null), not on partial per-ingredient updates from onRerun
+    if (matchResults === null) {
+      setAcceptedIndexes([])
+      setSkippedIndexes([])
+    }
   }, [matchResults])
 
   if (!matchResults) return null
