@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { Download, Pencil, Share2, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import {
@@ -846,13 +846,7 @@ function RecipeDetail() {
   if (loading) {
     return (
       <section className="mx-auto w-full max-w-4xl">
-        <Link
-          to="/"
-          className="inline-flex items-center rounded border border-mise-800 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-        >
-          Back to recipes
-        </Link>
-        <div className="mt-6 rounded border border-theme bg-mise-900 p-6 text-mise-500">
+        <div className="rounded border border-theme bg-mise-900 p-6 text-mise-500">
           Loading recipe...
         </div>
       </section>
@@ -862,13 +856,7 @@ function RecipeDetail() {
   if (error || !recipe) {
     return (
       <section className="mx-auto w-full max-w-4xl">
-        <Link
-          to="/"
-          className="inline-flex items-center rounded border border-mise-800 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-        >
-          Back to recipes
-        </Link>
-        <div className="mt-6 rounded border border-theme bg-mise-900 p-6">
+        <div className="rounded border border-theme bg-mise-900 p-6">
           <h1 className="text-2xl font-semibold tracking-tight text-mise-300">Recipe unavailable</h1>
           <p className="mt-2 text-mise-500">{error || 'The recipe you requested does not exist.'}</p>
         </div>
@@ -911,82 +899,76 @@ function RecipeDetail() {
 
   return (
     <section className="mx-auto w-full max-w-5xl">
-      <div className="sticky top-16 md:top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex items-center justify-between gap-3">
-        <Link
-          to="/"
-          className="inline-flex items-center rounded border border-mise-800 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-        >
-          Back to recipes
-        </Link>
-        <div className="flex items-center gap-2">
-          {editing ? (
-            <>
-              {saveError && (
-                <span className="text-xs text-rose-400">{saveError}</span>
-              )}
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded bg-ember px-3 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={handleEnterEdit}
-                className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                <Pencil size={14} />
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteRecipe}
-                className="inline-flex items-center gap-2 rounded border border-rose-500/40 bg-transparent px-3 py-2 text-sm font-medium text-rose-300 transition hover:border-rose-400 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
-              >
-                <Trash2 size={15} />
-                Delete Recipe
-              </button>
-              <a
-                href={`${API_BASE_URL}/recipes/${encodeURIComponent(id)}/export`}
-                download
-                className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                aria-label="Export recipe as markdown"
-              >
-                <Download size={14} />
-                Export
-              </a>
-              <button
-                type="button"
-                onClick={handleShareRecipeLink}
-                title="Copy link to import into MacroFactor"
-                aria-label="Copy link to import into MacroFactor"
-                className="inline-flex items-center gap-2 rounded border border-mise-800 bg-mise-950/80 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                <Share2 size={14} />
-                Share to MacroFactor
-              </button>
-              <span
-                aria-live="polite"
-                className={`text-xs text-mise-500 transition-opacity duration-300 ${copyConfirmationVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-              >
-                Link copied!
-              </span>
-            </>
-          )}
-        </div>
+      <div className="sticky top-16 md:top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex items-center justify-end gap-2">
+        {editing ? (
+          <>
+            {saveError && (
+              <span className="text-xs text-rose-400">{saveError}</span>
+            )}
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveEdit}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded bg-ember px-3 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleEnterEdit}
+              aria-label="Edit recipe"
+              className="inline-flex items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              <Pencil size={14} />
+              <span className="hidden md:inline">Edit</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteRecipe}
+              aria-label="Delete recipe"
+              className="inline-flex items-center gap-2 rounded border border-rose-500/40 bg-transparent px-2.5 py-2 text-sm font-medium text-rose-300 transition hover:border-rose-400 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+            >
+              <Trash2 size={14} />
+              <span className="hidden md:inline">Delete Recipe</span>
+            </button>
+            <a
+              href={`${API_BASE_URL}/recipes/${encodeURIComponent(id)}/export`}
+              download
+              aria-label="Export recipe as markdown"
+              className="inline-flex items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              <Download size={14} />
+              <span className="hidden md:inline">Export</span>
+            </a>
+            <button
+              type="button"
+              onClick={handleShareRecipeLink}
+              title="Copy link to import into MacroFactor"
+              aria-label="Copy link to import into MacroFactor"
+              className="inline-flex items-center gap-2 rounded border border-mise-800 bg-mise-950/80 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              <Share2 size={14} />
+              <span className="hidden md:inline">Share to MacroFactor</span>
+            </button>
+            <span
+              aria-live="polite"
+              className={`hidden md:inline text-xs text-mise-500 transition-opacity duration-300 ${copyConfirmationVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            >
+              Link copied!
+            </span>
+          </>
+        )}
       </div>
 
       <header className="mt-6">
