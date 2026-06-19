@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 from dotenv import load_dotenv
@@ -86,7 +87,7 @@ async def _fetch_recipe_image(category: str) -> str:
         if response.status_code in (301, 302, 303, 307, 308):
             location = response.headers.get('location')
             if location:
-                return location
+                return urljoin(url, location)
         if response.status_code == 200:
             return url
         response.raise_for_status()
