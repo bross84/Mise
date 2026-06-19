@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from dotenv import load_dotenv
@@ -96,6 +96,33 @@ async def _fetch_recipe_image(category: str) -> str:
     raise HTTPException(status_code=502, detail='Could not fetch image from loremflickr.')
 
 
+def _is_placeholder(image_url: str) -> bool:
+    """Return True if loremflickr returned its no-match placeholder image."""
+    path = urlparse(image_url).path
+    return 'defaultimage' in path.lower()
+
+
+async def _fetch_recipe_image_with_fallback(category: str) -> str:
+    """Fetch a recipe image, retrying with a narrower query if a placeholder is returned.
+
+    loremflickr returns a 'defaultImage' placeholder when no photos match the
+    given tag combination. Retry sequence:
+      1. Original category (e.g. "pasta,cheesesteak")
+      2. First tag only (e.g. "pasta") — only if original was multi-tag
+      3. Generic "food" — last resort so the user never sees a placeholder
+    Cap at 2 total fetches (original + 1 retry).
+    """
+    tags = [t.strip() for t in category.split(',') if t.strip()]
+
+    image_url = await _fetch_recipe_image(category)
+    if not _is_placeholder(image_url):
+        return image_url
+
+    # Build the fallback category: first tag alone, or "food" if already single-tag
+    fallback = tags[0] if len(tags) > 1 else 'food'
+    return await _fetch_recipe_image(fallback)
+
+
 def _build_image_category(recipe: Recipe) -> str:
     """Return the loremflickr search term to use for a recipe.
 
@@ -147,7 +174,7 @@ async def get_recipe_image(recipe_id: int, db: Session = Depends(get_db)):
         return RecipeImageResponse(image_url=recipe.image_url)
 
     category = _build_image_category(recipe)
-    image_url = await _fetch_recipe_image(category)
+    image_url = await _fetch_recipe_image_with_fallback(category)
 
     recipe.image_url = image_url
     recipe.updated_at = datetime.utcnow()
