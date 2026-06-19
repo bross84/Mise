@@ -5,7 +5,8 @@ import RecipeBrowser from './src/pages/RecipeBrowser.jsx'
 import RecipeDetail from './src/pages/RecipeDetail.jsx'
 import Settings from './src/pages/Settings.jsx'
 import { useThemeContext } from './src/context/ThemeContext.jsx'
-import { Sun, Moon } from 'lucide-react'
+import UnitConverterModal from './src/components/UnitConverterModal.jsx'
+import { Sun, Moon, Scale } from 'lucide-react'
 import { useState } from 'react'
 
 const navItems = [
@@ -50,6 +51,7 @@ function ThemeToggle({ compact = false }) {
 function App() {
   const location = useLocation()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isConverterOpen, setIsConverterOpen] = useState(false)
 
   const isNavItemActive = (to) => {
     if (to === '/') {
@@ -76,6 +78,14 @@ function App() {
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle compact />
+            <button
+              type="button"
+              onClick={() => setIsConverterOpen(true)}
+              aria-label="Open unit converter"
+              className="rounded border border-mise-800 p-1.5 text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              <Scale size={15} />
+            </button>
             <button
               type="button"
               onClick={() => setIsMenuOpen((current) => !current)}
@@ -126,10 +136,20 @@ function App() {
           ))}
         </nav>
 
-        <div className="mt-auto px-3 pt-4 border-t border-mise-800">
+        <div className="mt-auto px-3 pt-4 border-t border-mise-800 space-y-2">
+          <button
+            type="button"
+            onClick={() => { setIsConverterOpen(true); setIsMenuOpen(false) }}
+            className="flex w-full items-center gap-2.5 rounded border border-mise-800 px-3 py-2 text-sm text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          >
+            <Scale size={15} />
+            <span>Unit Converter</span>
+          </button>
           <ThemeToggle />
         </div>
       </aside>
+
+      {isConverterOpen && <UnitConverterModal onClose={() => setIsConverterOpen(false)} />}
 
       <main className="min-h-screen px-4 pb-6 pt-20 md:ml-64 md:p-8">
         <Routes>

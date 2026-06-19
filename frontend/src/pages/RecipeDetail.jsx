@@ -172,7 +172,11 @@ function formatServingMacroLabel(result) {
     100
   const numericServing = Number(servingCandidate)
   const servingG = Number.isFinite(numericServing) && numericServing > 0 ? numericServing : 100
-  const scale = servingG / 100
+
+  // When the backend already returns macros scaled to a specific serving size (unit = "per Ng"),
+  // don't scale again — values are pre-scaled. Only scale when macros are per-100g baseline.
+  const isPreScaled = result.unit && result.unit !== 'per 100g'
+  const scale = isPreScaled ? 1 : servingG / 100
 
   return `Per ${servingG}g: ${Math.round((Number(result.calories) || 0) * scale)} cal · ${Math.round((Number(result.protein) || 0) * scale)}g protein · ${Math.round((Number(result.carbs) || 0) * scale)}g carbs · ${Math.round((Number(result.fat) || 0) * scale)}g fat`
 }
