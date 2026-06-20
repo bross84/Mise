@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import create_tables, engine, get_db
 from app.models.recipe import Recipe
-from app.routers import recipes, ingredients, settings, share
+from app.routers import recipes, ingredients, settings, share, meal_plan
 from app.services.ai import AIService
 import app.models  # noqa: F401 — ensures models are registered before create_all
 
@@ -158,6 +158,7 @@ app.include_router(recipes.router)
 app.include_router(ingredients.router)
 app.include_router(settings.router)
 app.include_router(share.router)
+app.include_router(meal_plan.router)
 
 
 @app.get("/api/health")

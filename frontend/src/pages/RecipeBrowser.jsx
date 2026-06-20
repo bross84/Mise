@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardCopy, Download, Grid2X2, LayoutGrid, LayoutList, ShoppingCart, Shuffle, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, Download, Grid2X2, LayoutGrid, LayoutList, ShoppingCart, Shuffle, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react'
 import { deleteRecipe, generateShoppingList, getRecipes, importMarkdown } from '../api/client.js'
+import { useMealPlan } from '../context/MealPlanContext.jsx'
+import ShoppingListModal from '../components/ShoppingListModal.jsx'
 
 const tagHeaderTheme = {
   beef: 'from-rose-900/60 via-slate-900 to-slate-950 bg-rose-900/30',
@@ -64,6 +66,32 @@ function useRecipeImage(recipeId) {
 }
 
 // ── Large card (existing style) ────────────────────────────────────────────────
+
+function MealPlanButton({ recipeId, size = 14, className = '' }) {
+  const { recipeIds, add } = useMealPlan()
+  const isOnPlan = recipeIds.has(recipeId)
+  const [adding, setAdding] = useState(false)
+
+  const handleClick = async (e) => {
+    e.stopPropagation()
+    if (isOnPlan || adding) return
+    setAdding(true)
+    try { await add(recipeId) } catch { /* ignore */ } finally { setAdding(false) }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={isOnPlan ? 'On meal plan' : 'Add to meal plan'}
+      title={isOnPlan ? 'On meal plan' : 'Add to meal plan'}
+      disabled={adding}
+      className={`rounded p-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-40 ${isOnPlan ? 'text-ember' : 'text-mise-600 hover:text-mise-300'} ${className}`}
+    >
+      {isOnPlan ? <CalendarCheck size={size} /> : <CalendarPlus size={size} />}
+    </button>
+  )
+}
 
 function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selected, onToggleSelect }) {
   const { imageUrl, loadingImage } = useRecipeImage(recipe.id)
@@ -153,6 +181,7 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
             <Trash2 size={14} />
           </button>
           <div className="flex items-center gap-2">
+            <MealPlanButton recipeId={recipe.id} size={14} />
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRate(recipe.id, 'up') }}
@@ -230,6 +259,7 @@ function SmallCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
         <div className="mt-auto flex items-center justify-between pt-2">
           <span className="text-[10px] text-mise-600">{recipe.servings} srv</span>
           <div className="flex items-center gap-1">
+            <MealPlanButton recipeId={recipe.id} size={12} />
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onDelete(recipe) }}
@@ -324,6 +354,7 @@ function ListRow({ recipe, rating, onOpen, onRate, onDelete, selectMode, selecte
         <span className="hidden text-xs text-mise-600 sm:block">
           {recipe.updated_at ? new Date(recipe.updated_at).toLocaleDateString() : 'New'}
         </span>
+        <MealPlanButton recipeId={recipe.id} size={13} />
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onRate(recipe.id, 'up') }}
@@ -441,70 +472,6 @@ function ImportModal({ onClose, onImported }) {
             className="rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           >
             {importing ? 'Importing…' : 'Import →'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Shopping list modal ────────────────────────────────────────────────────────
-
-function ShoppingListModal({ text, onClose }) {
-  const [copied, setCopied] = useState(false)
-  const timerRef = useRef(null)
-
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [onClose])
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      if (timerRef.current) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // ignore
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div className="flex w-full max-w-lg flex-col gap-4 rounded border border-mise-700 bg-mise-950 p-5 shadow-2xl">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-mise-300">Shopping List</h2>
-          <button type="button" onClick={onClose} className="rounded p-1 text-mise-500 transition hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember">
-            <X size={16} />
-          </button>
-        </div>
-
-        <textarea
-          readOnly
-          value={text}
-          rows={Math.min(text.split('\n').length + 1, 18)}
-          className="w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 font-mono text-xs text-mise-300 focus:outline-none resize-none"
-        />
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded border border-mise-800 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember">
-            Close
-          </button>
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="inline-flex items-center gap-2 rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-          >
-            <ClipboardCopy size={14} />
-            {copied ? 'Copied!' : 'Copy to Clipboard'}
           </button>
         </div>
       </div>

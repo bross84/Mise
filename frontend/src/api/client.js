@@ -156,6 +156,25 @@ export async function generateShoppingList(recipeIds) {
   return response.text()
 }
 
+export function getMealPlan() {
+  return request('/meal-plan')
+}
+
+export function addToMealPlan(recipeId) {
+  return request('/meal-plan', {
+    method: 'POST',
+    body: JSON.stringify({ recipe_id: recipeId }),
+  })
+}
+
+export function removeFromMealPlan(itemId) {
+  return request(`/meal-plan/${encodeURIComponent(itemId)}`, { method: 'DELETE' })
+}
+
+export function clearMealPlan() {
+  return request('/meal-plan', { method: 'DELETE' })
+}
+
 export function saveOpenRouterKey(key) {
   return request('/settings/openrouter-key', {
     method: 'POST',

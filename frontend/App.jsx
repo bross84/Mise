@@ -1,16 +1,19 @@
 import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import AddRecipe from './src/pages/AddRecipe.jsx'
 import IngredientDatabase from './src/pages/IngredientDatabase.jsx'
+import MealPlan from './src/pages/MealPlan.jsx'
 import RecipeBrowser from './src/pages/RecipeBrowser.jsx'
 import RecipeDetail from './src/pages/RecipeDetail.jsx'
 import Settings from './src/pages/Settings.jsx'
 import { useThemeContext } from './src/context/ThemeContext.jsx'
+import { MealPlanProvider } from './src/context/MealPlanContext.jsx'
 import UnitConverterModal from './src/components/UnitConverterModal.jsx'
 import { Sun, Moon, Scale } from 'lucide-react'
 import { useState } from 'react'
 
 const navItems = [
   { label: 'Recipes', to: '/' },
+  { label: 'Meal Plan', to: '/meal-plan' },
   { label: 'Add Recipe', to: '/add' },
   { label: 'Ingredients', to: '/ingredients' },
   { label: 'Settings', to: '/settings' },
@@ -69,6 +72,7 @@ function App() {
     ].join(' ')
 
   return (
+    <MealPlanProvider>
     <div className="min-h-screen bg-mise-950 text-mise-300">
       <header className="fixed left-0 right-0 top-0 z-40 border-b border-mise-800 bg-mise-950/95 px-4 py-3 backdrop-blur md:hidden">
         <div className="flex items-center justify-between">
@@ -177,11 +181,13 @@ function App() {
           <Route path="/" element={<RecipeBrowser />} />
           <Route path="/recipe/:id" element={<RecipeDetail />} />
           <Route path="/add" element={<AddRecipe key={location.key} />} />
+          <Route path="/meal-plan" element={<MealPlan />} />
           <Route path="/ingredients" element={<IngredientDatabase />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </div>
+    </MealPlanProvider>
   )
 }
 

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Download, Pencil, Share2, Star, Trash2, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, Download, Pencil, Share2, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
+import { useMealPlan } from '../context/MealPlanContext.jsx'
 import {
   blockIngredient,
   createIngredient,
@@ -633,6 +634,8 @@ function buildRecipeJsonLd(recipe) {
 function RecipeDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const { recipeIds: mealPlanRecipeIds, add: addToMealPlan } = useMealPlan()
+  const [addingToMealPlan, setAddingToMealPlan] = useState(false)
   const [recipe, setRecipe] = useState(null)
   const [mode, setMode] = useState('per-serving')
   const [servings, setServings] = useState(1)
@@ -925,6 +928,23 @@ function RecipeDetail() {
           </>
         ) : (
           <>
+            <button
+              type="button"
+              disabled={addingToMealPlan || mealPlanRecipeIds.has(Number(id))}
+              onClick={async () => {
+                if (mealPlanRecipeIds.has(Number(id)) || addingToMealPlan) return
+                setAddingToMealPlan(true)
+                try { await addToMealPlan(Number(id)) } catch { /* ignore */ } finally { setAddingToMealPlan(false) }
+              }}
+              aria-label={mealPlanRecipeIds.has(Number(id)) ? 'On meal plan' : 'Add to meal plan'}
+              title={mealPlanRecipeIds.has(Number(id)) ? 'On meal plan' : 'Add to meal plan'}
+              className={`inline-flex items-center gap-2 rounded border px-2.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50 ${mealPlanRecipeIds.has(Number(id)) ? 'border-ember/40 text-ember' : 'border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300'}`}
+            >
+              {mealPlanRecipeIds.has(Number(id)) ? <CalendarCheck size={14} /> : <CalendarPlus size={14} />}
+              <span className="hidden md:inline">
+                {mealPlanRecipeIds.has(Number(id)) ? 'On Meal Plan' : 'Meal Plan'}
+              </span>
+            </button>
             <button
               type="button"
               onClick={handleEnterEdit}
