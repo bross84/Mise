@@ -7,7 +7,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -530,6 +530,91 @@ def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
         total_count=total_count,
         breakdown=breakdown,
     )
+
+
+class ShoppingListRequest(BaseModel):
+    recipe_ids: list[int]
+
+
+def _fmt_amount(value: float) -> str:
+    rounded = round(value, 2)
+    return str(int(rounded)) if rounded == int(rounded) else str(rounded)
+
+
+@router.post("/shopping-list", response_class=PlainTextResponse)
+def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(get_db)):
+    if not payload.recipe_ids:
+        return PlainTextResponse("")
+
+    db_recipes = db.query(Recipe).filter(Recipe.id.in_(payload.recipe_ids)).all()
+
+    # ingredient_id → {name, total_grams, dominant_unit, dominant_grams, is_count, count_total}
+    merged: dict[int, dict] = {}
+    unmatched: list[tuple[str, float, str]] = []
+
+    for recipe in db_recipes:
+        for ing in (recipe.ingredients or []):
+            ing_id = ing.get("ingredient_id")
+            name = (ing.get("name") or "").strip()
+            unit_raw = str(ing.get("unit") or "").strip()
+            try:
+                amount = float(ing.get("amount") or 0)
+            except (ValueError, TypeError):
+                amount = 0.0
+
+            if not ing_id:
+                unmatched.append((name, amount, unit_raw))
+                continue
+
+            db_ing = db.query(Ingredient).filter(Ingredient.id == int(ing_id)).first()
+            serving_g = getattr(db_ing, "serving_grams", None) if db_ing else None
+            grams = _to_grams(amount, unit_raw, serving_g, name)
+            display_name = db_ing.name if db_ing else name
+
+            if ing_id not in merged:
+                merged[ing_id] = {
+                    "name": display_name,
+                    "total_grams": grams,
+                    "dominant_unit": unit_raw,
+                    "dominant_grams": grams if grams is not None else 0.0,
+                    "is_count": grams is None,
+                    "count_total": amount if grams is None else 0.0,
+                }
+            else:
+                entry = merged[ing_id]
+                if grams is not None:
+                    entry["total_grams"] = (entry["total_grams"] or 0.0) + grams
+                    if grams > entry["dominant_grams"]:
+                        entry["dominant_unit"] = unit_raw
+                        entry["dominant_grams"] = grams
+                    entry["is_count"] = False
+                else:
+                    entry["count_total"] += amount
+
+    lines: list[str] = []
+
+    for entry in merged.values():
+        name = entry["name"]
+        if entry["is_count"]:
+            total = entry["count_total"]
+            unit = entry["dominant_unit"]
+            lines.append(f"{name} - {_fmt_amount(total)}{' ' + unit if unit else ''}")
+        else:
+            total_g = entry["total_grams"] or 0.0
+            dom_unit = entry["dominant_unit"] or "g"
+            factor = _UNIT_TO_GRAMS.get(dom_unit.lower(), 1.0)
+            converted = total_g / factor
+            lines.append(f"{name} - {_fmt_amount(converted)} {dom_unit}")
+
+    for name, amount, unit in unmatched:
+        if not name:
+            continue
+        amt_str = _fmt_amount(amount) if amount else ""
+        suffix = f"{' ' + unit if unit else ''}" if amt_str else ""
+        lines.append(f"{name}{' - ' + amt_str + suffix if amt_str else ''}")
+
+    lines.sort(key=lambda s: s.lower())
+    return PlainTextResponse("\n".join(lines))
 
 
 @router.get("/export-all")

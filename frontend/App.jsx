@@ -145,6 +145,27 @@ function App() {
             <Scale size={15} />
             <span>Unit Converter</span>
           </button>
+          <div className="pt-1 border-t border-mise-800/60">
+            <p className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-mise-600">Nutrition Lookup</p>
+            <div className="space-y-0.5">
+              {[
+                { label: 'MyNetDiary', href: 'https://www.mynetdiary.com/foodSearch.do' },
+                { label: 'FatSecret', href: 'https://foods.fatsecret.com/calories-nutrition' },
+                { label: 'Open Food Facts', href: 'https://us.openfoodfacts.org/' },
+              ].map(({ label, href }) => (
+                <a
+                  key={href}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-mise-600 transition hover:text-mise-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                >
+                  <span className="text-mise-700">↗</span>
+                  {label}
+                </a>
+              ))}
+            </div>
+          </div>
           <ThemeToggle />
         </div>
       </aside>

@@ -146,6 +146,16 @@ export function deleteBlockedIngredient(id) {
   })
 }
 
+export async function generateShoppingList(recipeIds) {
+  const response = await fetch(`${BASE_URL}/recipes/shopping-list`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipe_ids: recipeIds }),
+  })
+  if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
+  return response.text()
+}
+
 export function saveOpenRouterKey(key) {
   return request('/settings/openrouter-key', {
     method: 'POST',
