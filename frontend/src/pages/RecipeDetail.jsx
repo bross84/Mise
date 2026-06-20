@@ -636,6 +636,7 @@ function RecipeDetail() {
   const { id } = useParams()
   const { recipeIds: mealPlanRecipeIds, add: addToMealPlan } = useMealPlan()
   const [addingToMealPlan, setAddingToMealPlan] = useState(false)
+  const [savingScale, setSavingScale] = useState(false)
   const [recipe, setRecipe] = useState(null)
   const [mode, setMode] = useState('per-serving')
   const [servings, setServings] = useState(1)
@@ -741,15 +742,24 @@ function RecipeDetail() {
 
   const displayMacros = useMemo(() => {
     if (!macros || macros.matched_count === 0) return null
-    if (macroView === 'total') return macros.total
-    const divisor = servings > 0 ? servings : 1
-    return {
-      calories: macros.total.calories / divisor,
-      protein: macros.total.protein / divisor,
-      carbs: macros.total.carbs / divisor,
-      fat: macros.total.fat / divisor,
+    const factor = mode === 'scale' ? ingredientFactor : 1
+    if (macroView === 'total') {
+      return {
+        calories: macros.total.calories * factor,
+        protein: macros.total.protein * factor,
+        carbs: macros.total.carbs * factor,
+        fat: macros.total.fat * factor,
+      }
     }
-  }, [macros, macroView, servings])
+    // Per-serving: divide original total by original servings (scale doesn't change per-serving value)
+    const originalServings = recipe?.servings > 0 ? recipe.servings : 1
+    return {
+      calories: macros.total.calories / originalServings,
+      protein: macros.total.protein / originalServings,
+      carbs: macros.total.carbs / originalServings,
+      fat: macros.total.fat / originalServings,
+    }
+  }, [macros, macroView, mode, ingredientFactor, recipe?.servings])
 
   const scaledIngredients = useMemo(() => {
     if (!recipe) return []
@@ -768,6 +778,25 @@ function RecipeDetail() {
       breakdown: bdMap[ingredient.id] ?? null,
     }))
   }, [recipe, ingredientFactor, ingredientMap, macros])
+
+  const handleSaveScale = async () => {
+    if (!recipe || ingredientFactor === 1) return
+    setSavingScale(true)
+    try {
+      const scaledIngs = (recipe.ingredients ?? []).map((ing) => {
+        const raw = Number(ing.amount) * ingredientFactor
+        const rounded = Math.round(raw * 100) / 100
+        return { ...ing, amount: rounded }
+      })
+      const updated = await updateRecipe(id, { servings, ingredients: scaledIngs })
+      setRecipe(updated)
+      setServings(updated.servings)
+    } catch {
+      window.alert('Failed to save scaled recipe.')
+    } finally {
+      setSavingScale(false)
+    }
+  }
 
   const handleEnterEdit = () => {
     setDraft(recipeToDraft(recipe))
@@ -1177,6 +1206,17 @@ function RecipeDetail() {
             </button>
             <p className="text-xs text-mise-500">servings</p>
           </div>
+
+          {mode === 'scale' && servings !== recipe.servings && (
+            <button
+              type="button"
+              onClick={handleSaveScale}
+              disabled={savingScale}
+              className="ml-2 rounded border border-mise-700 bg-mise-800/60 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:bg-mise-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              {savingScale ? 'Saving…' : `Save as ${servings} servings`}
+            </button>
+          )}
         </div>
       )}
 
