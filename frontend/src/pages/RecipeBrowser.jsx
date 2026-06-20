@@ -498,6 +498,7 @@ function RecipeBrowser() {
   const [exportingAll, setExportingAll] = useState(false)
   const [shoppingListText, setShoppingListText] = useState(null)
   const [generatingList, setGeneratingList] = useState(false)
+  const [activeTag, setActiveTag] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -581,15 +582,25 @@ function RecipeBrowser() {
     }
   }
 
+  const tagFrequency = useMemo(() => {
+    const counts = {}
+    for (const r of recipes) {
+      for (const t of (r.tags ?? [])) {
+        counts[t] = (counts[t] ?? 0) + 1
+      }
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  }, [recipes])
+
   const sortedFilteredRecipes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
-    let list = query
-      ? recipes.filter((r) => {
-          const titleMatch = r.title.toLowerCase().includes(query)
-          const tagMatch = (r.tags ?? []).some((t) => t.toLowerCase().includes(query))
-          return titleMatch || tagMatch
-        })
-      : [...recipes]
+    let list = recipes.filter((r) => {
+      if (activeTag && !(r.tags ?? []).includes(activeTag)) return false
+      if (!query) return true
+      const titleMatch = r.title.toLowerCase().includes(query)
+      const tagMatch = (r.tags ?? []).some((t) => t.toLowerCase().includes(query))
+      return titleMatch || tagMatch
+    })
 
     if (sortBy === 'name-asc') list.sort((a, b) => a.title.localeCompare(b.title))
     else if (sortBy === 'name-desc') list.sort((a, b) => b.title.localeCompare(a.title))
@@ -597,7 +608,7 @@ function RecipeBrowser() {
     else if (sortBy === 'updated') list.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
 
     return list
-  }, [recipes, searchQuery, sortBy])
+  }, [recipes, searchQuery, sortBy, activeTag])
 
   const setRecipeRating = (recipeId, nextRating) => {
     setRatingsByRecipeId((current) => {
@@ -695,6 +706,26 @@ function RecipeBrowser() {
           placeholder="Search by recipe title or tag..."
           className="w-full rounded border border-mise-800 bg-mise-900 px-4 py-3 text-sm text-mise-300 placeholder:text-mise-500 outline-none ring-0 transition focus:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
         />
+        {tagFrequency.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {tagFrequency.map(([tag, count]) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => setActiveTag((t) => t === tag ? null : tag)}
+                className={[
+                  'rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
+                  activeTag === tag
+                    ? 'border-ember bg-ember/10 text-ember'
+                    : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300',
+                ].join(' ')}
+              >
+                {tag}
+                <span className={`ml-1.5 text-[10px] ${activeTag === tag ? 'text-ember/70' : 'text-mise-600'}`}>{count}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {!loading && !error && recipes.length > 0 && (
