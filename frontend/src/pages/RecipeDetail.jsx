@@ -742,8 +742,8 @@ function RecipeDetail() {
 
   const displayMacros = useMemo(() => {
     if (!macros || macros.matched_count === 0) return null
-    const factor = mode === 'scale' ? ingredientFactor : 1
     if (macroView === 'total') {
+      const factor = mode === 'scale' ? ingredientFactor : 1
       return {
         calories: macros.total.calories * factor,
         protein: macros.total.protein * factor,
@@ -751,15 +751,18 @@ function RecipeDetail() {
         fat: macros.total.fat * factor,
       }
     }
-    // Per-serving: divide original total by original servings (scale doesn't change per-serving value)
-    const originalServings = recipe?.servings > 0 ? recipe.servings : 1
+    // Per-serving: in scale mode anchor to original servings (scaling doesn't change per-serving value);
+    // in per-serving mode use the user-controlled servings stepper
+    const divisor = mode === 'scale'
+      ? (recipe?.servings > 0 ? recipe.servings : 1)
+      : (servings > 0 ? servings : 1)
     return {
-      calories: macros.total.calories / originalServings,
-      protein: macros.total.protein / originalServings,
-      carbs: macros.total.carbs / originalServings,
-      fat: macros.total.fat / originalServings,
+      calories: macros.total.calories / divisor,
+      protein: macros.total.protein / divisor,
+      carbs: macros.total.carbs / divisor,
+      fat: macros.total.fat / divisor,
     }
-  }, [macros, macroView, mode, ingredientFactor, recipe?.servings])
+  }, [macros, macroView, mode, ingredientFactor, servings, recipe?.servings])
 
   const scaledIngredients = useMemo(() => {
     if (!recipe) return []
