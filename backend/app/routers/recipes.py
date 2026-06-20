@@ -640,6 +640,18 @@ def export_all_recipes(db: Session = Depends(get_db)):
     )
 
 
+@router.get("/cookbooks", response_model=list[str])
+def list_cookbooks(db: Session = Depends(get_db)):
+    rows = (
+        db.query(Recipe.cookbook)
+        .filter(Recipe.cookbook.isnot(None), Recipe.cookbook != "")
+        .distinct()
+        .order_by(Recipe.cookbook.asc())
+        .all()
+    )
+    return [r.cookbook for r in rows]
+
+
 @router.get("", response_model=list[RecipeResponse])
 def list_recipes(db: Session = Depends(get_db)):
     return db.query(Recipe).order_by(Recipe.created_at.desc()).all()

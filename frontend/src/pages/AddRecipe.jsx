@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { blockIngredient, createIngredient, createRecipe, getIngredients, matchIngredients, parseIngredients, searchIngredients } from '../api/client.js'
+import { blockIngredient, createIngredient, createRecipe, getCookbooks, getIngredients, matchIngredients, parseIngredients, searchIngredients } from '../api/client.js'
 import { MarkdownField } from '../components/MarkdownText.jsx'
 
 const inputCls =
@@ -599,6 +599,8 @@ export default function AddRecipe() {
   const [notes, setNotes] = useState(prefill?.notes ?? '')
   const [tagsText, setTagsText] = useState(prefill?.tags?.join(', ') ?? '')
   const [sourceUrl, setSourceUrl] = useState(prefill?.source_url ?? '')
+  const [cookbook, setCookbook] = useState('')
+  const [cookbooks, setCookbooks] = useState([])
 
   // AI parsing
   const [parsing, setParsing] = useState(false)
@@ -623,6 +625,7 @@ export default function AddRecipe() {
   const ingredientsRef = useRef(null)
 
   useEffect(() => {
+    getCookbooks().then((d) => setCookbooks(Array.isArray(d) ? d : [])).catch(() => {})
     getIngredients().then((d) => setDbIngredients(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
 
@@ -753,6 +756,7 @@ export default function AddRecipe() {
         instructions: instructions.trim() || null,
         notes: notes.trim() || null,
         source_url: sourceUrl.trim() || null,
+        cookbook: cookbook.trim() || null,
         steps: [],
       })
       navigate(`/recipe/${recipe.id}`)
@@ -822,7 +826,7 @@ export default function AddRecipe() {
           </div>
         </div>
 
-        {/* Tags + Source URL */}
+        {/* Tags + Source URL + Cookbook */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-tags">
@@ -850,6 +854,24 @@ export default function AddRecipe() {
               className={inputCls}
             />
           </div>
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-mise-400" htmlFor="recipe-cookbook">
+            Cookbook <span className="font-normal text-mise-600">(optional)</span>
+          </label>
+          <input
+            id="recipe-cookbook"
+            type="text"
+            list="cookbook-suggestions"
+            value={cookbook}
+            onChange={(e) => setCookbook(e.target.value)}
+            placeholder="e.g. Salt Fat Acid Heat"
+            className={inputCls}
+            autoComplete="off"
+          />
+          <datalist id="cookbook-suggestions">
+            {cookbooks.map((c) => <option key={c} value={c} />)}
+          </datalist>
         </div>
 
         {/* Ingredients with @ autocomplete */}

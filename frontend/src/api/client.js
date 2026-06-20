@@ -156,6 +156,10 @@ export async function generateShoppingList(recipeIds) {
   return response.text()
 }
 
+export function getCookbooks() {
+  return request('/recipes/cookbooks')
+}
+
 export function getMealPlan() {
   return request('/meal-plan')
 }

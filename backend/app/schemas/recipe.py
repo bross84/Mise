@@ -28,6 +28,7 @@ class RecipeBase(BaseModel):
     notes: Optional[str] = None
     instructions: Optional[str] = None
     source_url: Optional[str] = None
+    cookbook: Optional[str] = None
     rating: Optional[int] = None
     thumbs: Optional[str] = None
     image_url: Optional[str] = None
@@ -46,6 +47,7 @@ class RecipeUpdate(BaseModel):
     notes: Optional[str] = None
     instructions: Optional[str] = None
     source_url: Optional[str] = None
+    cookbook: Optional[str] = None
     rating: Optional[int] = None
     thumbs: Optional[str] = None
     image_url: Optional[str] = None

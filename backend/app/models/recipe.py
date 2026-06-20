@@ -15,6 +15,7 @@ class Recipe(Base):
     notes = Column(String, nullable=True)
     instructions = Column(String, nullable=True)
     source_url = Column(String, nullable=True)
+    cookbook = Column(String, nullable=True)
     rating = Column(Integer, nullable=True)
     thumbs = Column(String, nullable=True)
     image_url = Column(String, nullable=True)

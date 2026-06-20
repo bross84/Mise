@@ -7,6 +7,7 @@ import {
   blockIngredient,
   createIngredient,
   deleteRecipe,
+  getCookbooks,
   getIngredients,
   getRecipe,
   getRecipeMacros,
@@ -592,6 +593,7 @@ function recipeToDraft(recipe) {
     notes: recipe.notes ?? '',
     instructions: recipe.instructions ?? stepsToInstructions(recipe.steps ?? []),
     source_url: recipe.source_url ?? '',
+    cookbook: recipe.cookbook ?? '',
     ingredients: (recipe.ingredients ?? []).map(makeDraftIngredient),
   }
 }
@@ -637,6 +639,7 @@ function RecipeDetail() {
   const { recipeIds: mealPlanRecipeIds, add: addToMealPlan } = useMealPlan()
   const [addingToMealPlan, setAddingToMealPlan] = useState(false)
   const [savingScale, setSavingScale] = useState(false)
+  const [cookbooks, setCookbooks] = useState([])
   const [recipe, setRecipe] = useState(null)
   const [mode, setMode] = useState('per-serving')
   const [servings, setServings] = useState(1)
@@ -663,11 +666,13 @@ function RecipeDetail() {
       try {
         setLoading(true)
         setError('')
-        const [data, ingredientList, macroData] = await Promise.all([
+        const [data, ingredientList, macroData, cookbookList] = await Promise.all([
           getRecipe(id),
           getIngredients(),
           getRecipeMacros(id).catch(() => null),
+          getCookbooks().catch(() => []),
         ])
+        setCookbooks(Array.isArray(cookbookList) ? cookbookList : [])
 
         if (!active) {
           return
@@ -827,6 +832,7 @@ function RecipeDetail() {
       notes: draft.notes.trim() || null,
       instructions: draft.instructions.trim() || null,
       source_url: draft.source_url.trim() || null,
+      cookbook: draft.cookbook.trim() || null,
       ingredients: draft.ingredients
         .filter((ing) => ing.name.trim() || ing.amount || ing.unit.trim())
         .map((ing) => ({
@@ -1350,6 +1356,26 @@ function RecipeDetail() {
               className={inputCls}
             />
           </div>
+
+          {/* Cookbook editor */}
+          <div>
+            <label className="mb-2 block text-xs font-medium uppercase tracking-widest text-mise-500" htmlFor="edit-cookbook">
+              Cookbook
+            </label>
+            <input
+              id="edit-cookbook"
+              type="text"
+              list="edit-cookbook-suggestions"
+              value={draft.cookbook}
+              onChange={(e) => setDraftField('cookbook', e.target.value)}
+              placeholder="e.g. Salt Fat Acid Heat"
+              className={inputCls}
+              autoComplete="off"
+            />
+            <datalist id="edit-cookbook-suggestions">
+              {cookbooks.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </div>
         </div>
       ) : (
         <>
@@ -1396,6 +1422,12 @@ function RecipeDetail() {
                   <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
                     <span className="block text-xs uppercase tracking-widest text-mise-500">Notes</span>
                     <div className="mt-1"><MarkdownText text={recipe.notes} /></div>
+                  </div>
+                )}
+                {recipe.cookbook && (
+                  <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
+                    <span className="block text-xs uppercase tracking-widest text-mise-500">Cookbook</span>
+                    <p className="mt-1 text-sm text-mise-300">{recipe.cookbook}</p>
                   </div>
                 )}
                 {recipe.source_url && (

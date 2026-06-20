@@ -28,6 +28,11 @@ def create_tables():
             conn.commit()
         except Exception:
             pass  # Column already exists
+        try:
+            conn.execute(text("ALTER TABLE recipes ADD COLUMN cookbook VARCHAR"))
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
 
 
 def get_db():
