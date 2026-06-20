@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarCheck, CalendarPlus, Download, Grid2X2, LayoutGrid, LayoutList, ShoppingCart, Shuffle, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, Download, Grid2X2, LayoutGrid, LayoutList, Plus, ShoppingCart, Shuffle, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react'
 import { deleteRecipe, generateShoppingList, getRecipes, importMarkdown } from '../api/client.js'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import ShoppingListModal from '../components/ShoppingListModal.jsx'
@@ -657,6 +657,14 @@ function RecipeBrowser() {
           <p className="mt-2 text-sm text-mise-500">Search recipes by title or tags.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/add')}
+            className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          >
+            <Plus size={14} />
+            New Recipe
+          </button>
           <button
             type="button"
             onClick={() => setShowImport(true)}
