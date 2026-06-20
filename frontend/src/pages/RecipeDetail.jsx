@@ -882,7 +882,8 @@ function RecipeDetail() {
 
   const handleShareRecipeLink = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href)
+      const shareUrl = `${window.location.origin}/share/recipe/${id}`
+      await navigator.clipboard.writeText(shareUrl)
       setCopyConfirmationVisible(true)
 
       if (copyConfirmationTimerRef.current) {
@@ -954,8 +955,8 @@ function RecipeDetail() {
             <button
               type="button"
               onClick={handleShareRecipeLink}
-              title="Copy link to import into MacroFactor"
-              aria-label="Copy link to import into MacroFactor"
+              title="Copy MacroFactor import link"
+              aria-label="Copy MacroFactor import link"
               className="inline-flex items-center gap-2 rounded border border-mise-800 bg-mise-950/80 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               <Share2 size={14} />
