@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { blockIngredient, createIngredient, deleteIngredient, getIngredients, searchIngredients, updateIngredient } from '../api/client.js'
+import { createIngredient, deleteIngredient, getIngredients, updateIngredient } from '../api/client.js'
 
 const secondaryButtonClassName =
   'rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
@@ -10,77 +10,15 @@ const destructiveButtonClassName =
 const fieldCls =
   'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
-function getServingGrams(result) {
-  const candidates = [
-    result.serving_grams,
-    result.servingGrams,
-    result.serving_size_g,
-    result.serving_size,
-    result.amount_grams,
-    result.amount,
-  ]
-
-  for (const value of candidates) {
-    const numeric = Number(value)
-    if (Number.isFinite(numeric) && numeric > 0) {
-      return numeric
-    }
-  }
-
-  return 100
-}
-
-function formatScaledValue(value) {
-  const scaled = Number(value)
-  if (!Number.isFinite(scaled)) {
-    return '0'
-  }
-  const rounded = Math.round(scaled * 10) / 10
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
-}
-
-function formatServingMacroLabel(result) {
-  if (result.source === 'openfoodfacts' && result.unit && /^per\s+\d/.test(String(result.unit))) {
-    return `${String(result.unit).replace('per', 'Per')}: ${formatScaledValue(result.calories)} cal · ${formatScaledValue(result.protein)}g protein · ${formatScaledValue(result.carbs)}g carbs · ${formatScaledValue(result.fat)}g fat`
-  }
-
-  const servingGrams = getServingGrams(result)
-  const factor = servingGrams / 100
-
-  return `Per ${formatScaledValue(servingGrams)}g: ${formatScaledValue(result.calories * factor)} cal · ${formatScaledValue(result.protein * factor)}g protein · ${formatScaledValue(result.carbs * factor)}g carbs · ${formatScaledValue(result.fat * factor)}g fat`
-}
-
-function formatOffServingText(result) {
-  const servingCandidates = [
-    result.serving_grams,
-    result.serving_size_g,
-    result.serving_size,
-    result.amount_grams,
-  ]
-
-  for (const candidate of servingCandidates) {
-    const numeric = Number(candidate)
-    if (Number.isFinite(numeric) && numeric > 0) {
-      return `Per serving: ${formatScaledValue(numeric)}g`
-    }
-  }
-
-  return 'Per 100g'
-}
-
 
 
 function IngredientDatabase() {
   const [query, setQuery] = useState('')
-  const [apiResults, setApiResults] = useState([])
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [searching, setSearching] = useState(false)
 
   // Inline add form state; null = hidden
   const [draft, setDraft] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState('')
-  const [selectSaving, setSelectSaving] = useState(false)
 
   // Inline edit state
   const [editingId, setEditingId] = useState(null)
@@ -95,18 +33,6 @@ function IngredientDatabase() {
   const [loadError, setLoadError] = useState('')
 
   const timerRef = useRef(null)
-  const containerRef = useRef(null)
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleOutside(e) {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setDropdownOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleOutside)
-    return () => document.removeEventListener('mousedown', handleOutside)
-  }, [])
 
   // Initial load
   useEffect(() => {
@@ -142,103 +68,15 @@ function IngredientDatabase() {
     return ingredients.filter((i) => i.name.toLowerCase().includes(q))
   }, [ingredients, query])
 
-  const runSearch = (q, { immediate = false } = {}) => {
-    clearTimeout(timerRef.current)
-
-    if (q.trim().length < 2) {
-      setApiResults([])
-      setDropdownOpen(false)
-      return
-    }
-
-    const execute = () => {
-      setSearching(true)
-      searchIngredients(q)
-        .then((data) => {
-          setApiResults(data?.results ?? [])
-          setDropdownOpen(true)
-        })
-        .catch(() => setApiResults([]))
-        .finally(() => setSearching(false))
-    }
-
-    if (immediate) {
-      execute()
-      return
-    }
-
-    timerRef.current = setTimeout(execute, 400)
-  }
-
-  const handleQueryChange = (e) => {
-    const q = e.target.value
-    setQuery(q)
-    runSearch(q)
-  }
-
-  useEffect(() => {
-    if (query.trim().length >= 2) {
-      runSearch(query, { immediate: true })
-    }
-  }, [])
-
-  useEffect(() => () => {
-    clearTimeout(timerRef.current)
-  }, [])
-
-  const handleSelectResult = async (result) => {
-    setDropdownOpen(false)
-    setQuery(result.name)
-    setApiResults([])
-
-    if (result.source === 'local') {
-      // Already in the local DB — just update the table filter
-      return
-    }
-
-    // External result: auto-save to local DB immediately
-    setSelectSaving(true)
-    setActionError('')
-    try {
-      await createIngredient({
-        name: result.name,
-        calories: result.calories,
-        protein: result.protein,
-        carbs: result.carbs,
-        fat: result.fat,
-        unit: result.unit || (result.serving_grams ? `per ${result.serving_grams}g` : 'per 100g'),
-        source: result.source === 'usda' ? 'usda' : 'off',
-        barcode: result.source === 'openfoodfacts' ? (result.barcode || null) : null,
-      })
-      await reloadIngredients()
-      setQuery('')
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to save ingredient.')
-      await reloadIngredients()
-    } finally {
-      setSelectSaving(false)
-    }
-  }
-
-  const handleBlockResult = async (result) => {
-    if (!result.source_id) return
-    setApiResults((prev) => prev.filter((r) => r.source_id !== result.source_id || r.source !== result.source))
-    try {
-      await blockIngredient({ name: result.name, source: result.source, source_id: result.source_id })
-    } catch {
-      // optimistic removal stands
-    }
-  }
+  useEffect(() => () => { clearTimeout(timerRef.current) }, [])
 
   const handleAddManually = () => {
-    setDropdownOpen(false)
     setDraft({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g' })
   }
 
   const handleClearDraft = () => {
     setDraft(null)
     setQuery('')
-    setApiResults([])
     setActionError('')
   }
 
@@ -314,106 +152,31 @@ function IngredientDatabase() {
 
   return (
     <section className="mx-auto w-full max-w-7xl">
-      <header>
-        <h1 className="font-display text-3xl font-semibold text-mise-300">Ingredient Database</h1>
-        <p className="mt-2 text-sm text-mise-500">Search your local database first, or find ingredients from USDA / Open Food Facts — selecting an external result saves it locally.</p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl font-semibold text-mise-300">Ingredient Database</h1>
+          <p className="mt-2 text-sm text-mise-500">Your saved ingredients.</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleAddManually}
+          className="shrink-0 inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+        >
+          + Add ingredient
+        </button>
       </header>
 
-      {/* Persistent search / add bar */}
-      <div ref={containerRef} className="relative mt-6">
-        <label htmlFor="ingredient-add-search" className="sr-only">Search or add ingredient</label>
+      <div className="mt-6">
+        <label htmlFor="ingredient-search" className="sr-only">Filter ingredients</label>
         <input
-          id="ingredient-add-search"
+          id="ingredient-search"
           type="text"
           value={query}
-          onChange={handleQueryChange}
-          onFocus={() => apiResults.length > 0 && setDropdownOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              if (query.trim().length >= 2) {
-                runSearch(query, { immediate: true })
-              } else if (!dropdownOpen && query.trim()) {
-                handleAddManually()
-              }
-            }
-            if (e.key === 'Escape') setDropdownOpen(false)
-          }}
-          placeholder="Search or add ingredient…"
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter ingredients…"
           autoComplete="off"
           className="w-full rounded border border-mise-800 bg-mise-900 px-4 py-3 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
         />
-        {(searching || selectSaving) && (
-          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-mise-500">
-            {selectSaving ? 'Saving…' : 'Searching…'}
-          </span>
-        )}
-
-        {/* API results dropdown */}
-        {dropdownOpen && (apiResults.length > 0 || query.trim().length >= 2) && (
-          <ul className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded border border-mise-800 bg-mise-900 shadow-xl">
-            {apiResults.map((result, i) => (
-              <li key={i} className="flex items-center border-b border-mise-800 last:border-none">
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleSelectResult(result)}
-                  className="min-w-0 flex-1 px-4 py-2.5 text-left transition hover:bg-mise-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-mise-300">{result.name}</span>
-                    {result.source_url && (
-                      <a href={result.source_url} target="_blank" rel="noopener noreferrer" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} className="text-mise-600 hover:text-mise-400" title="View source">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                      </a>
-                    )}
-                    {result.source === 'usda' && (
-                      <span className="shrink-0 rounded border border-sky-500/30 bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">USDA</span>
-                    )}
-                    {result.source === 'openfoodfacts' && (
-                      <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">OFF</span>
-                    )}
-                  </div>
-                  {result.source === 'openfoodfacts' && (
-                    <p className="mt-0.5 text-[11px] text-mise-500">
-                      <span>{formatOffServingText(result)}</span>
-                      {result.barcode && <span className="ml-2 text-mise-600">Barcode: {result.barcode}</span>}
-                    </p>
-                  )}
-                  <span className="text-xs text-mise-500">{formatServingMacroLabel(result)}</span>
-                </button>
-                {result.source_id && (
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleBlockResult(result)}
-                    className="shrink-0 px-3 py-2.5 text-[10px] text-mise-600 transition hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                    title="Block this result"
-                  >
-                    Block
-                  </button>
-                )}
-              </li>
-            ))}
-            {searching && apiResults.length === 0 && (
-              <li className="px-4 py-3 text-xs text-mise-500">Searching…</li>
-            )}
-            {!searching && apiResults.length === 0 && query.trim().length >= 2 && (
-              <li className="px-4 py-3 text-xs text-mise-500">No results found.</li>
-            )}
-            <li className="border-t border-mise-800">
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleAddManually}
-                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm transition hover:bg-mise-800/60 focus-visible:outline-none"
-              >
-                <span className="text-mise-400">+ Add custom ingredient</span>
-                {query.trim() && <span className="text-mise-500">&ldquo;{query.trim()}&rdquo;</span>}
-              </button>
-            </li>
-          </ul>
-        )}
       </div>
 
       {/* Inline pre-fill form */}

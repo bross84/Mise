@@ -242,7 +242,7 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
   const [error, setError] = useState('')
   const timerRef = useRef(null)
   const [customMode, setCustomMode] = useState(false)
-  const [customForm, setCustomForm] = useState({ name: '', calories: '', protein: '', carbs: '', fat: '' })
+  const [customForm, setCustomForm] = useState({ name: '', calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g' })
   const [savingCustom, setSavingCustom] = useState(false)
 
   const handleBlock = async (result, i) => {
@@ -394,7 +394,7 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
         protein: Number(customForm.protein) || 0,
         carbs: Number(customForm.carbs) || 0,
         fat: Number(customForm.fat) || 0,
-        unit: 'per 100g',
+        unit: customForm.unit?.trim() || 'per 100g',
         source: 'local',
       })
       onSelect(saved)
@@ -497,13 +497,20 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
 
       {customMode && (
         <form onSubmit={handleSaveCustom} className="mt-2 space-y-2 rounded border border-mise-800 bg-mise-900/60 p-3">
-          <p className="text-xs font-medium text-mise-500">Custom ingredient <span className="font-normal">(macros per 100g)</span></p>
+          <p className="text-xs font-medium text-mise-500">Custom ingredient</p>
           <input
             type="text"
             value={customForm.name}
             onChange={(e) => setCustomForm((f) => ({ ...f, name: e.target.value }))}
             placeholder="Name"
             required
+            className={inputCls}
+          />
+          <input
+            type="text"
+            value={customForm.unit}
+            onChange={(e) => setCustomForm((f) => ({ ...f, unit: e.target.value }))}
+            placeholder="Unit (e.g. per 100g, per 15g)"
             className={inputCls}
           />
           <div className="grid grid-cols-4 gap-2">
@@ -663,7 +670,7 @@ function buildRecipeJsonLd(recipe) {
 function RecipeDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const { recipeIds: mealPlanRecipeIds, add: addToMealPlan } = useMealPlan()
+  const { items: mealPlanItems, recipeIds: mealPlanRecipeIds, add: addToMealPlan, remove: removeFromMealPlan } = useMealPlan()
   const [addingToMealPlan, setAddingToMealPlan] = useState(false)
   const [savingScale, setSavingScale] = useState(false)
   const [cookbooks, setCookbooks] = useState([])
@@ -995,15 +1002,21 @@ function RecipeDetail() {
           <>
             <button
               type="button"
-              disabled={addingToMealPlan || mealPlanRecipeIds.has(Number(id))}
+              disabled={addingToMealPlan}
               onClick={async () => {
-                if (mealPlanRecipeIds.has(Number(id)) || addingToMealPlan) return
-                setAddingToMealPlan(true)
-                try { await addToMealPlan(Number(id)) } catch { /* ignore */ } finally { setAddingToMealPlan(false) }
+                if (addingToMealPlan) return
+                const numId = Number(id)
+                if (mealPlanRecipeIds.has(numId)) {
+                  const item = mealPlanItems.find((i) => i.recipe_id === numId)
+                  if (item) try { await removeFromMealPlan(item.id) } catch { /* ignore */ }
+                } else {
+                  setAddingToMealPlan(true)
+                  try { await addToMealPlan(numId) } catch { /* ignore */ } finally { setAddingToMealPlan(false) }
+                }
               }}
-              aria-label={mealPlanRecipeIds.has(Number(id)) ? 'On meal plan' : 'Add to meal plan'}
-              title={mealPlanRecipeIds.has(Number(id)) ? 'On meal plan' : 'Add to meal plan'}
-              className={`inline-flex items-center gap-2 rounded border px-2.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50 ${mealPlanRecipeIds.has(Number(id)) ? 'border-ember/40 text-ember' : 'border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300'}`}
+              aria-label={mealPlanRecipeIds.has(Number(id)) ? 'Remove from meal plan' : 'Add to meal plan'}
+              title={mealPlanRecipeIds.has(Number(id)) ? 'Remove from meal plan' : 'Add to meal plan'}
+              className={`inline-flex items-center gap-2 rounded border px-2.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50 ${mealPlanRecipeIds.has(Number(id)) ? 'border-ember/40 text-ember hover:border-rose-700 hover:text-rose-400' : 'border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300'}`}
             >
               {mealPlanRecipeIds.has(Number(id)) ? <CalendarCheck size={14} /> : <CalendarPlus size={14} />}
               <span className="hidden md:inline">
