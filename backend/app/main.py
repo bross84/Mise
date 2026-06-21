@@ -1,13 +1,12 @@
+import uuid
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
 
-import httpx
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -42,99 +41,16 @@ class AITestResponse(BaseModel):
     response: str
 
 
+UPLOADS_DIR = PROJECT_ROOT / 'uploads'
+UPLOADS_DIR.mkdir(exist_ok=True)
+
+ALLOWED_MIME_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
 class RecipeImageResponse(BaseModel):
     image_url: str | None = None
-
-
-IMAGE_CATEGORY_KEYWORDS: dict[str, str] = {
-    'butter chicken': 'butter-chicken',
-    'butter-chicken': 'butter-chicken',
-    'biryani': 'biryani',
-    'burger': 'burger',
-    'cake': 'cake',
-    'chicken': 'chicken',
-    'dessert': 'dessert',
-    'dosa': 'dosa',
-    'idli': 'idli',
-    'ihop': 'ihop',
-    'pasta': 'pasta',
-    'pizza': 'pizza',
-    'rice': 'rice',
-    'salad': 'salad',
-    'sandwich': 'sandwich',
-    'samosa': 'samosa',
-    'soup': 'soup',
-    'taco': 'taco',
-    'waffle': 'waffle',
-}
-
-
-def _pick_image_category(title: str) -> str:
-    normalized = (title or '').lower()
-    for keyword, category in IMAGE_CATEGORY_KEYWORDS.items():
-        if keyword in normalized:
-            return category
-    return 'food'
-
-
-async def _fetch_recipe_image(category: str) -> str:
-    url = f'https://loremflickr.com/640/480/{category}'
-    try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
-            response = await client.get(url)
-        # loremflickr 301s to a stable Flickr CDN URL — capture that instead of
-        # the category URL so the same image is served on every subsequent load.
-        if response.status_code in (301, 302, 303, 307, 308):
-            location = response.headers.get('location')
-            if location:
-                return urljoin(url, location)
-        if response.status_code == 200:
-            return url
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail='Could not fetch image from loremflickr.') from exc
-    raise HTTPException(status_code=502, detail='Could not fetch image from loremflickr.')
-
-
-def _is_placeholder(image_url: str) -> bool:
-    """Return True if loremflickr returned its no-match placeholder image."""
-    path = urlparse(image_url).path
-    return 'defaultimage' in path.lower()
-
-
-async def _fetch_recipe_image_with_fallback(category: str) -> str:
-    """Fetch a recipe image, retrying with a narrower query if a placeholder is returned.
-
-    loremflickr returns a 'defaultImage' placeholder when no photos match the
-    given tag combination. Retry sequence:
-      1. Original category (e.g. "pasta,cheesesteak")
-      2. First tag only (e.g. "pasta") — only if original was multi-tag
-      3. Generic "food" — last resort so the user never sees a placeholder
-    Cap at 2 total fetches (original + 1 retry).
-    """
-    tags = [t.strip() for t in category.split(',') if t.strip()]
-
-    image_url = await _fetch_recipe_image(category)
-    if not _is_placeholder(image_url):
-        return image_url
-
-    # Build the fallback category: first tag alone, or "food" if already single-tag
-    fallback = tags[0] if len(tags) > 1 else 'food'
-    return await _fetch_recipe_image(fallback)
-
-
-def _build_image_category(recipe: Recipe) -> str:
-    """Return the loremflickr search term to use for a recipe.
-
-    Preference order:
-    1. Up to 3 of the recipe's saved tags joined by commas (e.g. "mexican,ground beef,high protein")
-    2. Single keyword derived from the recipe title via the existing keyword map
-    3. Generic fallback: "food"
-    """
-    tags = [t.strip() for t in (recipe.tags or []) if t and t.strip()]
-    if tags:
-        return ','.join(tags[:2])
-    return _pick_image_category(recipe.title or '')
 
 
 def _migrate():
@@ -161,41 +77,65 @@ app.include_router(share.router)
 app.include_router(meal_plan.router)
 
 
+app.mount('/uploads', StaticFiles(directory=str(UPLOADS_DIR)), name='uploads')
+
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
 
 
-@app.get('/api/recipes/{recipe_id}/image', response_model=RecipeImageResponse)
-async def get_recipe_image(recipe_id: int, db: Session = Depends(get_db)):
+@app.post('/api/recipes/{recipe_id}/image', response_model=RecipeImageResponse)
+async def upload_recipe_image(
+    recipe_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail='Recipe not found')
 
-    if recipe.image_url:
-        return RecipeImageResponse(image_url=recipe.image_url)
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=415, detail='Unsupported image type. Use JPEG, PNG, WebP, or GIF.')
 
-    category = _build_image_category(recipe)
-    image_url = await _fetch_recipe_image_with_fallback(category)
+    suffix = Path(file.filename or '').suffix.lower() or '.jpg'
+    if suffix not in ALLOWED_EXTENSIONS:
+        suffix = '.jpg'
 
-    recipe.image_url = image_url
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail='Image must be under 10 MB.')
+
+    # Delete old file if it was a local upload
+    if recipe.image_url and recipe.image_url.startswith('/uploads/'):
+        old_path = PROJECT_ROOT / recipe.image_url.lstrip('/')
+        old_path.unlink(missing_ok=True)
+
+    filename = f'{recipe_id}_{uuid.uuid4().hex}{suffix}'
+    dest = UPLOADS_DIR / filename
+    dest.write_bytes(contents)
+
+    recipe.image_url = f'/uploads/{filename}'
     recipe.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(recipe)
 
-    return RecipeImageResponse(image_url=image_url)
+    return RecipeImageResponse(image_url=recipe.image_url)
 
 
-@app.patch('/api/recipes/{recipe_id}/image/clear', response_model=RecipeImageResponse)
-def clear_recipe_image(recipe_id: int, db: Session = Depends(get_db)):
+@app.delete('/api/recipes/{recipe_id}/image', response_model=RecipeImageResponse)
+def delete_recipe_image(recipe_id: int, db: Session = Depends(get_db)):
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail='Recipe not found')
+
+    if recipe.image_url and recipe.image_url.startswith('/uploads/'):
+        old_path = PROJECT_ROOT / recipe.image_url.lstrip('/')
+        old_path.unlink(missing_ok=True)
 
     recipe.image_url = None
     recipe.updated_at = datetime.utcnow()
     db.commit()
-    db.refresh(recipe)
 
     return RecipeImageResponse(image_url=None)
 

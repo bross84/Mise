@@ -70,97 +70,86 @@ const inputCls =
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
 
-function RecipeHeroImage({ recipeId, title }) {
-  const [imageUrl, setImageUrl] = useState(null)
-  const [loadingImage, setLoadingImage] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
+  const inputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
 
-  useEffect(() => {
-    if (!recipeId) return undefined
-    let active = true
-
-    async function loadImage() {
-      try {
-        if (active) setLoadingImage(true)
-
-        const response = await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image`)
-        if (!response.ok) throw new Error(`Image request failed with status ${response.status}`)
-
-        const data = await response.json()
-        if (active) setImageUrl(data?.image_url ?? null)
-      } catch {
-        if (active) setImageUrl(null)
-      } finally {
-        if (active) {
-          setLoadingImage(false)
-          setRefreshing(false)
-        }
-      }
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image`, {
+        method: 'POST',
+        body: form,
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      const data = await res.json()
+      onImageChange(data.image_url)
+    } catch {
+      // leave existing image unchanged on error
+    } finally {
+      setUploading(false)
+      e.target.value = ''
     }
-
-    void loadImage()
-    return () => { active = false }
-  }, [recipeId])
-
-  const handleRefresh = () => {
-    if (refreshing || loadingImage) return
-    setRefreshing(true)
-
-    let active = true
-    async function doRefresh() {
-      try {
-        setLoadingImage(true)
-        await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image/clear`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-        })
-
-        const response = await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image`)
-        if (!response.ok) throw new Error(`Image request failed with status ${response.status}`)
-
-        const data = await response.json()
-        if (active) setImageUrl(data?.image_url ?? null)
-      } catch {
-        if (active) setImageUrl(null)
-      } finally {
-        if (active) {
-          setLoadingImage(false)
-          setRefreshing(false)
-        }
-      }
-    }
-
-    void doRefresh()
-    return () => { active = false }
   }
 
+  const handleDelete = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image`, { method: 'DELETE' })
+      onImageChange(null)
+    } catch {
+      // ignore
+    }
+  }
+
+  const imageHost = import.meta.env.VITE_API_URL
+    ? import.meta.env.VITE_API_URL.replace('/api', '')
+    : 'http://localhost:8001'
+
+  const resolvedUrl = imageUrl?.startsWith('/uploads/')
+    ? `${imageHost}${imageUrl}`
+    : imageUrl
+
   return (
-    <div className="relative mt-6 h-[240px] w-full overflow-hidden rounded border border-theme bg-mise-900">
-      {loadingImage ? (
-        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-mise-800 via-mise-700/70 to-mise-800" />
-      ) : imageUrl ? (
+    <div className="group relative mt-6 h-[240px] w-full overflow-hidden rounded border border-theme bg-mise-900">
+      {resolvedUrl ? (
         <img
-          src={imageUrl}
-          alt={`Recipe image for ${title}`}
+          src={resolvedUrl}
+          alt=""
           className="h-full w-full object-cover"
           loading="lazy"
-          onError={() => setImageUrl(null)}
+          onError={() => onImageChange(null)}
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center bg-mise-900 text-5xl text-mise-500">
-          <span aria-hidden="true">🍽️</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-mise-500">
+          <span className="text-4xl" aria-hidden="true">🍽️</span>
+          <span className="text-xs">No image</span>
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleRefresh}
-        disabled={loadingImage || refreshing}
-        className="absolute right-2 top-2 rounded-full border border-mise-800/70 bg-mise-950/50 p-2 text-mise-400 shadow-sm backdrop-blur transition hover:border-mise-700 hover:bg-mise-950/70 hover:text-mise-200 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-        aria-label="Refresh recipe image"
-      >
-        <span aria-hidden="true">🔄</span>
-      </button>
+      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-mise-950/60 opacity-0 transition-opacity group-hover:opacity-100">
+        <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="rounded border border-mise-700 bg-mise-900/90 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+        >
+          {uploading ? 'Uploading…' : resolvedUrl ? 'Replace' : 'Upload image'}
+        </button>
+        {resolvedUrl && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="rounded border border-mise-700 bg-mise-900/90 px-3 py-1.5 text-xs font-medium text-mise-500 transition hover:border-rose-700 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          >
+            Remove
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -1042,7 +1031,11 @@ function RecipeDetail() {
         ) : (
           <>
             <h1 className="font-display text-3xl font-semibold text-mise-300">{recipe.title}</h1>
-            <RecipeHeroImage recipeId={recipe.id} title={recipe.title} />
+            <RecipeHeroImage
+              recipeId={recipe.id}
+              imageUrl={recipe.image_url}
+              onImageChange={(url) => setRecipe((r) => ({ ...r, image_url: url }))}
+            />
           </>
         )}
 

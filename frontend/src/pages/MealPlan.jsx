@@ -5,13 +5,21 @@ import { useMealPlan } from '../context/MealPlanContext.jsx'
 import { generateShoppingList } from '../api/client.js'
 import ShoppingListModal from '../components/ShoppingListModal.jsx'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
+const IMAGE_HOST = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace('/api', '')
+  : 'http://localhost:8001'
+
+function resolveImageUrl(imageUrl) {
+  if (!imageUrl) return null
+  return imageUrl.startsWith('/uploads/') ? `${IMAGE_HOST}${imageUrl}` : imageUrl
+}
 
 function RecipeThumbnail({ imageUrl, title }) {
-  if (imageUrl) {
+  const resolved = resolveImageUrl(imageUrl)
+  if (resolved) {
     return (
       <img
-        src={imageUrl}
+        src={resolved}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"

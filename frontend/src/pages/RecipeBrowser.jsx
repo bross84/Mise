@@ -35,34 +35,13 @@ const SORT_OPTIONS = [
 
 const VIEW_KEY = 'mise-recipe-view'
 
-// ── Shared image hook ──────────────────────────────────────────────────────────
+const IMAGE_HOST = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace('/api', '')
+  : 'http://localhost:8001'
 
-function useRecipeImage(recipeId) {
-  const [imageUrl, setImageUrl] = useState(null)
-  const [loadingImage, setLoadingImage] = useState(true)
-
-  useEffect(() => {
-    let active = true
-    setLoadingImage(true)
-
-    async function load() {
-      try {
-        const res = await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image`)
-        if (!res.ok) throw new Error()
-        const data = await res.json()
-        if (active) setImageUrl(data?.image_url ?? null)
-      } catch {
-        if (active) setImageUrl(null)
-      } finally {
-        if (active) setLoadingImage(false)
-      }
-    }
-
-    void load()
-    return () => { active = false }
-  }, [recipeId])
-
-  return { imageUrl, loadingImage, setImageUrl }
+function resolveImageUrl(imageUrl) {
+  if (!imageUrl) return null
+  return imageUrl.startsWith('/uploads/') ? `${IMAGE_HOST}${imageUrl}` : imageUrl
 }
 
 // ── Large card (existing style) ────────────────────────────────────────────────
@@ -94,7 +73,7 @@ function MealPlanButton({ recipeId, size = 14, className = '' }) {
 }
 
 function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selected, onToggleSelect }) {
-  const { imageUrl, loadingImage } = useRecipeImage(recipe.id)
+  const imageUrl = resolveImageUrl(recipe.image_url)
   const tags = Array.isArray(recipe.tags) ? recipe.tags : []
   const ingredientCount = Array.isArray(recipe.ingredients) ? recipe.ingredients.length : 0
   const stepCount = Array.isArray(recipe.steps) ? recipe.steps.length : 0
@@ -118,9 +97,7 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
       ].join(' ')}
     >
       <div className="relative h-40 w-full border-b border-mise-800 bg-mise-900" aria-hidden="true">
-        {loadingImage ? (
-          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-mise-800 via-mise-700/70 to-mise-800" />
-        ) : imageUrl ? (
+        {imageUrl ? (
           <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => {}} />
         ) : (
           <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-4xl text-mise-500`}>
@@ -212,7 +189,7 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
 // ── Small card ─────────────────────────────────────────────────────────────────
 
 function SmallCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selected, onToggleSelect }) {
-  const { imageUrl, loadingImage } = useRecipeImage(recipe.id)
+  const imageUrl = resolveImageUrl(recipe.image_url)
   const headerTheme = getHeaderTheme(recipe.tags?.[0])
 
   const handleCardClick = () => {
@@ -233,9 +210,7 @@ function SmallCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
       ].join(' ')}
     >
       <div className="relative h-24 w-full border-b border-mise-800 bg-mise-900" aria-hidden="true">
-        {loadingImage ? (
-          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-mise-800 via-mise-700/70 to-mise-800" />
-        ) : imageUrl ? (
+        {imageUrl ? (
           <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => {}} />
         ) : (
           <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-2xl text-mise-500`}>
@@ -296,7 +271,7 @@ function SmallCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
 // ── List row ───────────────────────────────────────────────────────────────────
 
 function ListRow({ recipe, rating, onOpen, onRate, onDelete, selectMode, selected, onToggleSelect }) {
-  const { imageUrl, loadingImage } = useRecipeImage(recipe.id)
+  const imageUrl = resolveImageUrl(recipe.image_url)
   const headerTheme = getHeaderTheme(recipe.tags?.[0])
   const tags = Array.isArray(recipe.tags) ? recipe.tags : []
 
@@ -325,9 +300,7 @@ function ListRow({ recipe, rating, onOpen, onRate, onDelete, selectMode, selecte
       )}
 
       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded border border-mise-800" aria-hidden="true">
-        {loadingImage ? (
-          <div className="absolute inset-0 animate-pulse bg-mise-800" />
-        ) : imageUrl ? (
+        {imageUrl ? (
           <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => {}} />
         ) : (
           <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-lg`}>
@@ -671,18 +644,20 @@ function RecipeBrowser() {
           <button
             type="button"
             onClick={() => navigate('/add')}
+            aria-label="New Recipe"
             className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           >
             <Plus size={14} />
-            New Recipe
+            <span className="hidden sm:inline">New Recipe</span>
           </button>
           <button
             type="button"
             onClick={() => setShowImport(true)}
+            aria-label="Import recipe"
             className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           >
             <Upload size={14} />
-            Import
+            <span className="hidden sm:inline">Import</span>
           </button>
           <button
             type="button"
@@ -691,7 +666,7 @@ function RecipeBrowser() {
             className="inline-flex items-center gap-2 rounded border border-ember px-3 py-2 text-sm font-medium text-ember transition hover:bg-ember/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           >
             <Shuffle size={15} />
-            Surprise Me
+            <span className="hidden sm:inline">Surprise Me</span>
           </button>
         </div>
       </header>
