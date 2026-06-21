@@ -16,4 +16,5 @@ class Ingredient(Base):
     source = Column(String, default="local", server_default="local")
     barcode = Column(String, nullable=True)
     serving_grams = Column(Float, nullable=True)
+    serving_quantity = Column(Integer, default=1, server_default="1", nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

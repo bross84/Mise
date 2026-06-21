@@ -61,6 +61,11 @@ def _migrate():
         for col, col_type in [("instructions", "TEXT"), ("source_url", "TEXT"), ("image_url", "TEXT")]:
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE recipes ADD COLUMN {col} {col_type}"))
+
+        result = conn.execute(text("PRAGMA table_info(ingredients)"))
+        ing_cols = {row[1] for row in result.fetchall()}
+        if "serving_quantity" not in ing_cols:
+            conn.execute(text("ALTER TABLE ingredients ADD COLUMN serving_quantity INTEGER DEFAULT 1"))
         conn.commit()
 
 

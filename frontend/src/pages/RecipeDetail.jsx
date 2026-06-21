@@ -242,7 +242,7 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
   const [error, setError] = useState('')
   const timerRef = useRef(null)
   const [customMode, setCustomMode] = useState(false)
-  const [customForm, setCustomForm] = useState({ name: '', calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g' })
+  const [customForm, setCustomForm] = useState({ name: '', calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g', serving_quantity: '' })
   const [savingCustom, setSavingCustom] = useState(false)
 
   const handleBlock = async (result, i) => {
@@ -388,6 +388,7 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
     setSavingCustom(true)
     setError('')
     try {
+      const servingQty = parseInt(customForm.serving_quantity, 10)
       const saved = await createIngredient({
         name,
         calories: Number(customForm.calories) || 0,
@@ -396,6 +397,7 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
         fat: Number(customForm.fat) || 0,
         unit: customForm.unit?.trim() || 'per 100g',
         source: 'local',
+        ...(servingQty > 1 ? { serving_quantity: servingQty } : {}),
       })
       onSelect(saved)
       onClose()
@@ -506,13 +508,26 @@ function IngredientSearchPanel({ ingredientName, onSelect, onClose }) {
             required
             className={inputCls}
           />
-          <input
-            type="text"
-            value={customForm.unit}
-            onChange={(e) => setCustomForm((f) => ({ ...f, unit: e.target.value }))}
-            placeholder="Unit (e.g. per 100g, per 15g)"
-            className={inputCls}
-          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              value={customForm.unit}
+              onChange={(e) => setCustomForm((f) => ({ ...f, unit: e.target.value }))}
+              placeholder="Unit (e.g. per 100g, per 45g)"
+              className={inputCls}
+            />
+            <div>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={customForm.serving_quantity}
+                onChange={(e) => setCustomForm((f) => ({ ...f, serving_quantity: e.target.value }))}
+                placeholder="Pieces per serving (e.g. 3)"
+                className={inputCls}
+              />
+            </div>
+          </div>
           <div className="grid grid-cols-4 gap-2">
             {[['calories', 'Cal'], ['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat']].map(([field, label]) => (
               <div key={field}>

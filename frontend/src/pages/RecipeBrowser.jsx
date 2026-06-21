@@ -73,7 +73,6 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
   const imageUrl = resolveImageUrl(recipe.image_url)
   const tags = Array.isArray(recipe.tags) ? recipe.tags : []
   const ingredientCount = Array.isArray(recipe.ingredients) ? recipe.ingredients.length : 0
-  const stepCount = Array.isArray(recipe.steps) ? recipe.steps.length : 0
   const headerTheme = getHeaderTheme(recipe.tags?.[0])
 
   const handleCardClick = () => {
@@ -134,9 +133,8 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
           ))}
         </div>
 
-        <div className="mt-auto grid grid-cols-3 gap-2 border-t border-theme pt-4 text-xs">
+        <div className="mt-auto grid grid-cols-2 gap-2 border-t border-theme pt-4 text-xs">
           <div><p className="text-mise-500">Ingredients</p><p className="mt-1 font-semibold text-mise-300">{ingredientCount}</p></div>
-          <div><p className="text-mise-500">Steps</p><p className="mt-1 font-semibold text-mise-300">{stepCount}</p></div>
           <div>
             <p className="text-mise-500">Updated</p>
             <p className="mt-1 font-semibold text-mise-300">

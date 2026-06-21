@@ -37,6 +37,7 @@ export default function MealPlan() {
   const [clearing, setClearing] = useState(false)
   const [shoppingListText, setShoppingListText] = useState(null)
   const [generatingList, setGeneratingList] = useState(false)
+  const [generatingForId, setGeneratingForId] = useState(null)
 
   const handleRemove = async (itemId) => {
     setRemoving(itemId)
@@ -58,6 +59,18 @@ export default function MealPlan() {
       window.alert('Failed to clear meal plan.')
     } finally {
       setClearing(false)
+    }
+  }
+
+  const handleGenerateSingle = async (recipeId, itemId) => {
+    setGeneratingForId(itemId)
+    try {
+      const text = await generateShoppingList([recipeId])
+      setShoppingListText(text)
+    } catch {
+      window.alert('Failed to generate shopping list.')
+    } finally {
+      setGeneratingForId(null)
     }
   }
 
@@ -145,6 +158,15 @@ export default function MealPlan() {
                 {item.title}
               </Link>
 
+              <button
+                type="button"
+                onClick={() => handleGenerateSingle(item.recipe_id, item.id)}
+                disabled={generatingForId === item.id}
+                aria-label={`Shopping list for ${item.title}`}
+                className="shrink-0 rounded p-1.5 text-mise-600 transition hover:text-mise-300 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                <ShoppingCart size={14} />
+              </button>
               <button
                 type="button"
                 onClick={() => handleRemove(item.id)}

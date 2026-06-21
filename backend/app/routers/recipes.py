@@ -330,13 +330,15 @@ def _count_weight_lookup(ingredient_name: str) -> float | None:
     return None
 
 
+_COUNT_UNITS: frozenset[str] = frozenset({'count', 'whole', 'piece', 'pieces', 'item', 'items', 'each'})
+
 def _to_grams(amount: float, unit: str, serving_grams: float | None = None,
               ingredient_name: str = '') -> float | None:
     stripped = unit.lower().strip()
-    if stripped:
+    if stripped and stripped not in _COUNT_UNITS:
         factor = _UNIT_TO_GRAMS.get(stripped)
         return None if factor is None else amount * factor
-    # No unit — count-based: prefer DB serving_grams, then produce table, else skip
+    # No unit or count-based unit: prefer DB serving_grams, then produce table, else skip
     if serving_grams and serving_grams > 0:
         return amount * serving_grams
     fallback = _count_weight_lookup(ingredient_name)
@@ -493,16 +495,22 @@ def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
             continue
 
         amount = float(amount_raw)
-        grams = _to_grams(amount, unit_raw, getattr(db_ing, "serving_grams", None), ing_name)
-        if grams is None or grams <= 0:
-            breakdown.append(IngredientBreakdown(
-                recipe_ingredient_id=rid, name=ing_name, amount_display=amount_display,
-                calories=None, protein=None, carbs=None, fat=None, matched=False,
-            ))
-            continue
-
-        ref_g = _reference_grams(db_ing)
-        factor = grams / ref_g
+        stripped_unit = unit_raw.lower().strip()
+        if stripped_unit in _COUNT_UNITS or not stripped_unit:
+            # Count-based: divide count by serving_quantity so e.g. "6 count" of a
+            # 3-per-serving item gives factor=2 (2 servings' worth of macros)
+            serving_qty = float(getattr(db_ing, "serving_quantity", None) or 1)
+            factor = amount / serving_qty
+        else:
+            grams = _to_grams(amount, unit_raw, getattr(db_ing, "serving_grams", None), ing_name)
+            if grams is None or grams <= 0:
+                breakdown.append(IngredientBreakdown(
+                    recipe_ingredient_id=rid, name=ing_name, amount_display=amount_display,
+                    calories=None, protein=None, carbs=None, fat=None, matched=False,
+                ))
+                continue
+            ref_g = _reference_grams(db_ing)
+            factor = grams / ref_g
         cal = db_ing.calories * factor
         prot = db_ing.protein * factor
         carbs_v = db_ing.carbs * factor

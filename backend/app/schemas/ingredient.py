@@ -13,6 +13,7 @@ class IngredientBase(BaseModel):
     source: str = "local"
     barcode: Optional[str] = None
     serving_grams: Optional[float] = None
+    serving_quantity: Optional[int] = 1
 
 
 class IngredientCreate(IngredientBase):
@@ -29,6 +30,7 @@ class IngredientUpdate(BaseModel):
     source: Optional[str] = None
     barcode: Optional[str] = None
     serving_grams: Optional[float] = None
+    serving_quantity: Optional[int] = None
 
 
 class IngredientResponse(IngredientBase):
