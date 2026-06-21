@@ -71,8 +71,11 @@ const inputCls =
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
 
 function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
-  const inputRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const urlInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
+  const [showUrlInput, setShowUrlInput] = useState(false)
+  const [urlDraft, setUrlDraft] = useState('')
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0]
@@ -96,6 +99,19 @@ function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
     }
   }
 
+  const handleUrlSave = async () => {
+    const url = urlDraft.trim()
+    if (!url) return
+    try {
+      await updateRecipe(recipeId, { image_url: url })
+      onImageChange(url)
+      setShowUrlInput(false)
+      setUrlDraft('')
+    } catch {
+      // ignore
+    }
+  }
+
   const handleDelete = async () => {
     try {
       await fetch(`${API_BASE_URL}/recipes/${encodeURIComponent(recipeId)}/image`, { method: 'DELETE' })
@@ -105,12 +121,8 @@ function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
     }
   }
 
-  const imageHost = import.meta.env.VITE_API_URL
-    ? import.meta.env.VITE_API_URL.replace('/api', '')
-    : 'http://localhost:8001'
-
   const resolvedUrl = imageUrl?.startsWith('/uploads/')
-    ? `${imageHost}${imageUrl}`
+    ? (import.meta.env.VITE_API_URL?.startsWith('/') ? imageUrl : `http://localhost:8001${imageUrl}`)
     : imageUrl
 
   return (
@@ -130,24 +142,50 @@ function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
         </div>
       )}
 
-      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-mise-950/60 opacity-0 transition-opacity group-hover:opacity-100">
-        <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploading}
-          className="rounded border border-mise-700 bg-mise-900/90 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-        >
-          {uploading ? 'Uploading…' : resolvedUrl ? 'Replace' : 'Upload image'}
-        </button>
-        {resolvedUrl && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="rounded border border-mise-700 bg-mise-900/90 px-3 py-1.5 text-xs font-medium text-mise-500 transition hover:border-rose-700 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-          >
-            Remove
-          </button>
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-mise-950/60 opacity-0 transition-opacity group-hover:opacity-100">
+        {showUrlInput ? (
+          <div className="flex w-72 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <input
+              ref={urlInputRef}
+              type="url"
+              value={urlDraft}
+              onChange={(e) => setUrlDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleUrlSave(); if (e.key === 'Escape') { setShowUrlInput(false); setUrlDraft('') } }}
+              placeholder="https://..."
+              autoFocus
+              className="min-w-0 flex-1 rounded border border-mise-700 bg-mise-900/95 px-2.5 py-1.5 text-xs text-mise-300 placeholder:text-mise-600 focus:border-mise-500 focus:outline-none"
+            />
+            <button type="button" onClick={handleUrlSave} className="rounded border border-mise-700 bg-mise-900/95 px-2.5 py-1.5 text-xs font-medium text-mise-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember">Save</button>
+            <button type="button" onClick={() => { setShowUrlInput(false); setUrlDraft('') }} className="rounded border border-mise-700 bg-mise-900/95 px-2.5 py-1.5 text-xs text-mise-500 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember">✕</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="rounded border border-mise-700 bg-mise-900/90 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              {uploading ? 'Uploading…' : resolvedUrl ? 'Replace file' : 'Upload file'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowUrlInput(true)}
+              className="rounded border border-mise-700 bg-mise-900/90 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Use URL
+            </button>
+            {resolvedUrl && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="rounded border border-mise-700 bg-mise-900/90 px-3 py-1.5 text-xs font-medium text-mise-500 transition hover:border-rose-700 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                Remove
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

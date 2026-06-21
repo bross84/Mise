@@ -3,6 +3,7 @@ services:
     image: ghcr.io/bross84/mise-backend:latest
     volumes:
       - mise_data:/app/data
+      - mise_uploads:/app/uploads
     env_file:
       - .env
     restart: unless-stopped
@@ -17,3 +18,4 @@ services:
 
 volumes:
   mise_data:
+  mise_uploads:
