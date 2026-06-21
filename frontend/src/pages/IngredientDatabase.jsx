@@ -110,6 +110,8 @@ function IngredientDatabase() {
       protein: String(ingredient.protein),
       carbs: String(ingredient.carbs),
       fat: String(ingredient.fat),
+      unit: ingredient.unit || 'per 100g',
+      serving_quantity: ingredient.serving_quantity > 1 ? String(ingredient.serving_quantity) : '',
     })
     setActionError('')
   }
@@ -123,12 +125,15 @@ function IngredientDatabase() {
     setEditSaving(true)
     setActionError('')
     try {
+      const servingQty = parseInt(editDraft.serving_quantity, 10)
       await updateIngredient(editingId, {
         name: editDraft.name.trim(),
         calories: Number(editDraft.calories) || 0,
         protein: Number(editDraft.protein) || 0,
         carbs: Number(editDraft.carbs) || 0,
         fat: Number(editDraft.fat) || 0,
+        unit: editDraft.unit?.trim() || 'per 100g',
+        serving_quantity: servingQty > 1 ? servingQty : 1,
       })
       setEditingId(null)
       setEditDraft({})
@@ -379,8 +384,20 @@ function IngredientDatabase() {
                             <label className="mb-1 block text-xs text-mise-500">Unit</label>
                             <input
                               type="text"
-                              value={editDraft.unit || ingredient.unit}
+                              value={editDraft.unit ?? ingredient.unit}
                               onChange={(e) => setEditDraft((d) => ({ ...d, unit: e.target.value }))}
+                              className={fieldCls}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-mise-500">Pieces per serving</label>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={editDraft.serving_quantity}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, serving_quantity: e.target.value }))}
+                              placeholder="1"
                               className={fieldCls}
                             />
                           </div>
