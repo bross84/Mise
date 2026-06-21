@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { CalendarCheck, CalendarPlus, Download, Pencil, Share2, Star, Trash2, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, ChefHat, Download, Pencil, Share2, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import {
@@ -667,11 +667,122 @@ function buildRecipeJsonLd(recipe) {
   }
 }
 
+function CookMode({ recipe, scaledIngredients, steps, onExit }) {
+  const [checked, setChecked] = useState(() => new Set())
+  const wakeLockRef = useRef(null)
+
+  useEffect(() => {
+    async function acquireWakeLock() {
+      try {
+        wakeLockRef.current = await navigator.wakeLock.request('screen')
+      } catch {
+        // Wake lock not supported or denied — silently continue
+      }
+    }
+    void acquireWakeLock()
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && !wakeLockRef.current) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+        } catch { /* ignore */ }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      wakeLockRef.current?.release().catch(() => {})
+      wakeLockRef.current = null
+    }
+  }, [])
+
+  const toggle = (id) => setChecked((prev) => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-mise-950 px-4 py-6">
+      <div className="mx-auto max-w-2xl">
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="font-display text-2xl font-semibold text-mise-300">{recipe.title}</h1>
+          <button
+            type="button"
+            onClick={onExit}
+            className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          >
+            <X size={14} />
+            Exit cook mode
+          </button>
+        </div>
+
+        <section className="rounded border border-theme bg-mise-900 p-4">
+          <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
+          <ul className="mt-4 space-y-2">
+            {scaledIngredients.map((ingredient) => {
+              const done = checked.has(ingredient.id)
+              return (
+                <li key={ingredient.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(ingredient.id)}
+                    className={`flex w-full items-center gap-3 rounded border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember ${
+                      done
+                        ? 'border-mise-800 bg-mise-950/30 opacity-50'
+                        : 'border-theme bg-mise-950/50 hover:border-mise-700'
+                    }`}
+                  >
+                    <span className={[
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs font-bold transition',
+                      done ? 'border-ember bg-ember text-white' : 'border-mise-700',
+                    ].join(' ')}>
+                      {done && '✓'}
+                    </span>
+                    <span className={`flex-1 text-sm ${done ? 'line-through text-mise-600' : 'text-mise-400'}`}>
+                      {ingredient.displayName ?? ingredient.name}
+                    </span>
+                    <span className={`shrink-0 text-sm font-medium ${done ? 'text-mise-600' : 'text-mise-300'}`}>
+                      {ingredient.scaledAmount} {ingredient.unit}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+
+        {recipe.instructions ? (
+          <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Instructions</h2>
+            <div className="mt-4 text-mise-300"><MarkdownText text={recipe.instructions} /></div>
+          </section>
+        ) : steps.length > 0 ? (
+          <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Steps</h2>
+            <ol className="mt-4 space-y-3">
+              {steps.map((step, index) => (
+                <li key={step.id} className="rounded border border-theme bg-mise-950/50 px-4 py-3">
+                  <p className="text-sm font-medium text-mise-500">Step {index + 1}</p>
+                  <p className="mt-1 text-base font-semibold text-mise-300">{step.title}</p>
+                  <p className="mt-1 text-sm text-mise-400">{step.content}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function RecipeDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
   const { items: mealPlanItems, recipeIds: mealPlanRecipeIds, add: addToMealPlan, remove: removeFromMealPlan } = useMealPlan()
   const [addingToMealPlan, setAddingToMealPlan] = useState(false)
+  const [cookMode, setCookMode] = useState(false)
   const [savingScale, setSavingScale] = useState(false)
   const [cookbooks, setCookbooks] = useState([])
   const [recipe, setRecipe] = useState(null)
@@ -974,6 +1085,15 @@ function RecipeDetail() {
   }
 
   return (
+    <>
+    {cookMode && (
+      <CookMode
+        recipe={recipe}
+        scaledIngredients={scaledIngredients}
+        steps={steps}
+        onExit={() => setCookMode(false)}
+      />
+    )}
     <section className="mx-auto w-full max-w-5xl">
       <div className="sticky top-16 md:top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex items-center justify-end gap-2">
         {editing ? (
@@ -1000,6 +1120,14 @@ function RecipeDetail() {
           </>
         ) : (
           <>
+            <button
+              type="button"
+              onClick={() => setCookMode(true)}
+              className="inline-flex items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              <ChefHat size={14} />
+              <span className="hidden md:inline">Cook</span>
+            </button>
             <button
               type="button"
               disabled={addingToMealPlan}
@@ -1207,7 +1335,7 @@ function RecipeDetail() {
       )}
 
       {!editing && (
-        <div className="mt-6 inline-flex items-center gap-4 rounded border border-theme bg-mise-900 px-4 py-3">
+        <div className="mt-6 flex w-full flex-col gap-3 rounded border border-theme bg-mise-900 px-4 py-3 sm:inline-flex sm:w-auto sm:flex-row sm:items-center sm:gap-4">
           <div className="flex items-center gap-4" role="radiogroup" aria-label="Serving mode">
             {[
               { value: 'per-serving', label: 'Per Serving' },
@@ -1237,7 +1365,7 @@ function RecipeDetail() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 border-l border-theme pl-4">
+          <div className="flex items-center gap-2 border-t border-theme pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
             <button
               type="button"
               onClick={() => setServings((current) => Math.max(1, current - 1))}
@@ -1423,8 +1551,8 @@ function RecipeDetail() {
         </div>
       ) : (
         <>
-          <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-            <section className="rounded border border-theme bg-mise-900 p-4">
+          <div className="mt-6 flex flex-col gap-6 lg:grid lg:grid-cols-[1.1fr_1fr]">
+            <section className="rounded border border-theme bg-mise-900 p-4 lg:order-none">
               <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
               <ul className="mt-4 space-y-2">
                 {scaledIngredients.map((ingredient) => {
@@ -1459,7 +1587,7 @@ function RecipeDetail() {
               </ul>
             </section>
 
-            <section className="rounded border border-theme bg-mise-900 p-4">
+            <section className="order-last rounded border border-theme bg-mise-900 p-4 lg:order-none">
               <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Recipe Details</h2>
               <div className="mt-4 space-y-3">
                 {recipe.notes && (
@@ -1501,15 +1629,13 @@ function RecipeDetail() {
                 )}
               </div>
             </section>
-          </div>
-
           {recipe.instructions ? (
-            <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
+            <section className="rounded border border-theme bg-mise-900 p-4 lg:col-span-2 lg:order-none">
               <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Instructions</h2>
               <div className="mt-4"><MarkdownText text={recipe.instructions} /></div>
             </section>
           ) : steps.length > 0 ? (
-            <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
+            <section className="rounded border border-theme bg-mise-900 p-4 lg:col-span-2 lg:order-none">
               <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Steps</h2>
               <ol className="mt-4 space-y-3">
                 {steps.map((step, index) => (
@@ -1529,9 +1655,11 @@ function RecipeDetail() {
               </ol>
             </section>
           ) : null}
+          </div>
         </>
       )}
     </section>
+    </>
   )
 }
 
