@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarCheck, CalendarPlus, Download, Grid2X2, LayoutGrid, LayoutList, Plus, ShoppingCart, Shuffle, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, Download, Grid2X2, LayoutGrid, LayoutList, Plus, ShoppingCart, Shuffle, Star, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react'
 import { deleteRecipe, generateShoppingList, getRecipes, importMarkdown, updateRecipe } from '../api/client.js'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import ShoppingListModal from '../components/ShoppingListModal.jsx'
@@ -175,6 +175,13 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
               <ThumbsDown size={14} className={rating === 'down' ? 'fill-current text-rose-300' : 'text-mise-500'} />
             </button>
           </div>
+          {recipe.rating > 0 && (
+            <div className="flex items-center gap-0.5">
+              {[1,2,3,4,5].map((s) => (
+                <Star key={s} size={12} className={s <= recipe.rating ? 'fill-amber-400 text-amber-400' : 'fill-none text-mise-700'} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </article>
@@ -579,7 +586,7 @@ function RecipeBrowser() {
     else if (sortBy === 'updated') list.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
 
     return list
-  }, [recipes, searchQuery, sortBy, activeTag])
+  }, [recipes, searchQuery, sortBy, activeTag, thumbsFilter, starsFilter])
 
   const setRecipeRating = async (recipeId, nextRating) => {
     const recipe = recipes.find((r) => r.id === recipeId)
