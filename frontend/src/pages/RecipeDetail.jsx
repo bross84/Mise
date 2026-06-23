@@ -32,15 +32,9 @@ function formatTimerLabel(timerSeconds) {
   return `${Math.round(timerSeconds / 60)} min`
 }
 
-function StarRating() {
-  const [rating, setRating] = useState(0)
+function StarRating({ value, onChange }) {
   const [hovered, setHovered] = useState(0)
-
-  const handleClick = (star) => {
-    setRating((current) => (current === star ? 0 : star))
-  }
-
-  const displayed = hovered || rating
+  const displayed = hovered || value || 0
 
   return (
     <div className="mt-4 flex items-center gap-1" role="group" aria-label="Star rating">
@@ -48,11 +42,11 @@ function StarRating() {
         <button
           key={star}
           type="button"
-          onClick={() => handleClick(star)}
+          onClick={() => onChange(value === star ? 0 : star)}
           onMouseEnter={() => setHovered(star)}
           onMouseLeave={() => setHovered(0)}
           aria-label={`Rate ${star} star${star !== 1 ? 's' : ''}`}
-          aria-pressed={rating === star}
+          aria-pressed={value === star}
           className="rounded text-amber-400 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
         >
           <Star
@@ -974,6 +968,16 @@ function RecipeDetail() {
     setEditing(true)
   }
 
+  const handleRatingChange = async (newRating) => {
+    setRecipe((r) => ({ ...r, rating: newRating || null }))
+    try {
+      await updateRecipe(id, { rating: newRating || null })
+    } catch {
+      // revert
+      setRecipe((r) => ({ ...r, rating: recipe?.rating ?? null }))
+    }
+  }
+
   const handleCancelEdit = () => {
     setEditing(false)
     setDraft(null)
@@ -1306,7 +1310,7 @@ function RecipeDetail() {
           <p className="mt-4 text-sm text-mise-500">Servings: {recipe.servings}</p>
         )}
 
-        <StarRating />
+        <StarRating value={recipe.rating || 0} onChange={handleRatingChange} />
       </header>
 
       {!editing && displayMacros && (

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CalendarCheck, CalendarPlus, Download, Grid2X2, LayoutGrid, LayoutList, Plus, ShoppingCart, Shuffle, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react'
-import { deleteRecipe, generateShoppingList, getRecipes, importMarkdown } from '../api/client.js'
+import { deleteRecipe, generateShoppingList, getRecipes, importMarkdown, updateRecipe } from '../api/client.js'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import ShoppingListModal from '../components/ShoppingListModal.jsx'
 
@@ -453,7 +453,6 @@ function RecipeBrowser() {
   const navigate = useNavigate()
   const [recipes, setRecipes] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
-  const [ratingsByRecipeId, setRatingsByRecipeId] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -467,6 +466,8 @@ function RecipeBrowser() {
   const [shoppingListText, setShoppingListText] = useState(null)
   const [generatingList, setGeneratingList] = useState(false)
   const [activeTag, setActiveTag] = useState(null)
+  const [thumbsFilter, setThumbsFilter] = useState(null)
+  const [starsFilter, setStarsFilter] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -564,6 +565,8 @@ function RecipeBrowser() {
     const query = searchQuery.trim().toLowerCase()
     let list = recipes.filter((r) => {
       if (activeTag && !(r.tags ?? []).includes(activeTag)) return false
+      if (thumbsFilter && r.thumbs !== thumbsFilter) return false
+      if (starsFilter && (r.rating || 0) < starsFilter) return false
       if (!query) return true
       const titleMatch = r.title.toLowerCase().includes(query)
       const tagMatch = (r.tags ?? []).some((t) => t.toLowerCase().includes(query))
@@ -578,11 +581,15 @@ function RecipeBrowser() {
     return list
   }, [recipes, searchQuery, sortBy, activeTag])
 
-  const setRecipeRating = (recipeId, nextRating) => {
-    setRatingsByRecipeId((current) => {
-      const current_ = current[recipeId] || null
-      return { ...current, [recipeId]: current_ === nextRating ? null : nextRating }
-    })
+  const setRecipeRating = async (recipeId, nextRating) => {
+    const recipe = recipes.find((r) => r.id === recipeId)
+    const newThumbs = recipe?.thumbs === nextRating ? null : nextRating
+    setRecipes((prev) => prev.map((r) => r.id === recipeId ? { ...r, thumbs: newThumbs } : r))
+    try {
+      await updateRecipe(recipeId, { thumbs: newThumbs })
+    } catch {
+      setRecipes((prev) => prev.map((r) => r.id === recipeId ? { ...r, thumbs: recipe?.thumbs ?? null } : r))
+    }
   }
 
   const handleSurpriseMe = () => {
@@ -696,6 +703,35 @@ function RecipeBrowser() {
             ))}
           </div>
         )}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setThumbsFilter((f) => f === 'up' ? null : 'up')}
+            className={['rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember flex items-center gap-1',
+              thumbsFilter === 'up' ? 'border-ember bg-ember/10 text-ember' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
+          >
+            <ThumbsUp size={11} className={thumbsFilter === 'up' ? 'fill-current' : ''} /> Liked
+          </button>
+          <button
+            type="button"
+            onClick={() => setThumbsFilter((f) => f === 'down' ? null : 'down')}
+            className={['rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember flex items-center gap-1',
+              thumbsFilter === 'down' ? 'border-rose-400/60 bg-rose-400/10 text-rose-300' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
+          >
+            <ThumbsDown size={11} className={thumbsFilter === 'down' ? 'fill-current' : ''} /> Disliked
+          </button>
+          {[3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setStarsFilter((f) => f === n ? null : n)}
+              className={['rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
+                starsFilter === n ? 'border-amber-400/60 bg-amber-400/10 text-amber-300' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
+            >
+              {'★'.repeat(n)}{'☆'.repeat(5 - n)}+
+            </button>
+          ))}
+        </div>
       </div>
 
       {!loading && !error && recipes.length > 0 && (
@@ -806,7 +842,7 @@ function RecipeBrowser() {
             <CardComponent
               key={recipe.id}
               recipe={recipe}
-              rating={ratingsByRecipeId[recipe.id] || null}
+              rating={recipe.thumbs || null}
               onOpen={() => navigate(`/recipe/${recipe.id}`)}
               onRate={setRecipeRating}
               onDelete={handleDelete}
