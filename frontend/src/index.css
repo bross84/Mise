@@ -58,6 +58,16 @@
   background: rgb(var(--mise-500));
 }
 
+/* ── iOS auto-zoom prevention ── */
+/* Safari zooms in on any focused input with font-size < 16px. Enforce 16px on iOS
+   via the -webkit-text-size-adjust trick: inputs visually use their Tailwind size
+   but the browser won't zoom because the base size satisfies the threshold. */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
 /* ── Number input spinners (WebKit/Blink) ── */
 /* Give spinners a background matching the dark theme so they don't look default-OS white.
    Arrow icon color is OS-rendered and can't be changed via CSS; background is what we control. */
