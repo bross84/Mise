@@ -1,9 +1,12 @@
 import io
 import json
+import logging
 import re
 import zipfile
 from datetime import date, datetime
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -171,6 +174,7 @@ async def parse_recipe(payload: ParseRequest):
     try:
         markdown = await AIService().complete_with_system(PARSE_SYSTEM_PROMPT, prompt)
     except (ValueError, RuntimeError) as exc:
+        logger.error("AI parse failed: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     # Strip any accidental code fences
@@ -433,6 +437,7 @@ async def import_markdown(payload: ImportMarkdownRequest):
             f"Extract recipe data from the following markdown:\n\n{payload.markdown}",
         )
     except (ValueError, RuntimeError) as exc:
+        logger.error("AI import-markdown failed: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE).strip()
