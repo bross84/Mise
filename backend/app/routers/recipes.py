@@ -179,6 +179,8 @@ async def parse_recipe(payload: ParseRequest):
 
     # Strip any accidental code fences
     markdown = re.sub(r"^```(?:markdown)?\s*|\s*```$", "", markdown.strip(), flags=re.MULTILINE).strip()
+    # Fix AI artifact where \n- gets collapsed to n- at line start
+    markdown = re.sub(r"^n-\s", "- ", markdown, flags=re.MULTILINE)
 
     return ParseResponse(markdown=markdown)
 
