@@ -556,6 +556,38 @@ def _fmt_amount(value: float) -> str:
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
 
 
+class SuggestTagsRequest(BaseModel):
+    recipe_name: Optional[str] = None
+    ingredients: Optional[str] = None
+    instructions: Optional[str] = None
+
+
+class SuggestTagsResponse(BaseModel):
+    tags: list[str]
+
+
+@router.post("/suggest-tags", response_model=SuggestTagsResponse)
+async def suggest_tags(payload: SuggestTagsRequest):
+    parts = []
+    if payload.recipe_name:
+        parts.append(f"Recipe name: {payload.recipe_name}")
+    if payload.ingredients:
+        parts.append(f"Ingredients:\n{payload.ingredients}")
+    if payload.instructions:
+        parts.append(f"Instructions:\n{payload.instructions[:1000]}")
+    if not parts:
+        return SuggestTagsResponse(tags=[])
+    try:
+        result = await AIService().complete_with_system(TAG_GENERATION_SYSTEM_PROMPT, "\n\n".join(parts))
+        import json as _json
+        tags = _json.loads(result)
+        if isinstance(tags, list):
+            return SuggestTagsResponse(tags=[str(t).lower().strip() for t in tags if str(t).strip()][:6])
+    except Exception:
+        pass
+    return SuggestTagsResponse(tags=[])
+
+
 @router.post("/shopping-list", response_class=PlainTextResponse)
 def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(get_db)):
     if not payload.recipe_ids:

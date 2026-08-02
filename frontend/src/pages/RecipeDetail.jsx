@@ -12,6 +12,7 @@ import {
   getRecipe,
   getRecipeMacros,
   searchIngredients,
+  suggestTags,
   updateRecipe,
 } from '../api/client.js'
 
@@ -808,6 +809,7 @@ function RecipeDetail() {
   const [draft, setDraft] = useState(null)
   const [openIngredientSearchId, setOpenIngredientSearchId] = useState(null)
   const [tagInput, setTagInput] = useState('')
+  const [suggestingTags, setSuggestingTags] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [copyConfirmationVisible, setCopyConfirmationVisible] = useState(false)
@@ -1048,6 +1050,29 @@ function RecipeDetail() {
     setDraft((current) => ({ ...current, tags: current.tags.filter((t) => t !== tag) }))
   }
 
+  const handleSuggestTags = async () => {
+    setSuggestingTags(true)
+    try {
+      const ingredientsText = (draft.ingredients ?? [])
+        .map((i) => [i.amount, i.unit, i.name].filter(Boolean).join(' '))
+        .join('\n')
+      const suggested = await suggestTags({
+        recipeName: draft.title,
+        ingredients: ingredientsText,
+        instructions: draft.instructions || '',
+      })
+      const existing = new Set(draft.tags)
+      const toAdd = suggested.filter((t) => !existing.has(t))
+      if (toAdd.length > 0) {
+        setDraft((current) => ({ ...current, tags: [...current.tags, ...toAdd] }))
+      }
+    } catch {
+      // silently fail — user can add tags manually
+    } finally {
+      setSuggestingTags(false)
+    }
+  }
+
   if (loading) {
     return (
       <section className="mx-auto w-full max-w-4xl">
@@ -1278,6 +1303,14 @@ function RecipeDetail() {
                   className="rounded border border-mise-800 px-3 py-2 text-sm text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
                 >
                   Add
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSuggestTags}
+                  disabled={suggestingTags}
+                  className="shrink-0 rounded border border-mise-700 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-600 hover:text-mise-300 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                >
+                  {suggestingTags ? 'Suggesting…' : '✦ Suggest'}
                 </button>
               </div>
             </div>

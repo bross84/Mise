@@ -146,6 +146,17 @@ export function deleteBlockedIngredient(id) {
   })
 }
 
+export async function suggestTags({ recipeName, ingredients, instructions }) {
+  const response = await fetch(`${BASE_URL}/recipes/suggest-tags`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipe_name: recipeName, ingredients, instructions }),
+  })
+  if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
+  const data = await response.json()
+  return data.tags
+}
+
 export async function generateShoppingList(recipeIds) {
   const response = await fetch(`${BASE_URL}/recipes/shopping-list`, {
     method: 'POST',
