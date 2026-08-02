@@ -724,59 +724,66 @@ function RecipeBrowser() {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          onInput={(e) => setSearchQuery(e.currentTarget.value)}
           placeholder="Search by recipe title or tag..."
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           className="w-full rounded border border-mise-800 bg-mise-900 px-4 py-3 text-sm text-mise-300 placeholder:text-mise-500 outline-none ring-0 transition focus:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
         />
-        {tagFrequency.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
+      </div>
+
+      {!loading && !error && recipes.length > 0 && (tagFrequency.length > 0 || thumbsFilter || starsFilter) && (
+        <div className="mt-3 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto">
+          <div className="flex items-center gap-1.5 pb-1 w-max">
+            <button
+              type="button"
+              onClick={() => setThumbsFilter((f) => f === 'up' ? null : 'up')}
+              className={['shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember flex items-center gap-1',
+                thumbsFilter === 'up' ? 'border-ember bg-ember/10 text-ember' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
+            >
+              <ThumbsUp size={10} className={thumbsFilter === 'up' ? 'fill-current' : ''} /> Liked
+            </button>
+            <button
+              type="button"
+              onClick={() => setThumbsFilter((f) => f === 'down' ? null : 'down')}
+              className={['shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember flex items-center gap-1',
+                thumbsFilter === 'down' ? 'border-rose-400/60 bg-rose-400/10 text-rose-300' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
+            >
+              <ThumbsDown size={10} className={thumbsFilter === 'down' ? 'fill-current' : ''} /> Disliked
+            </button>
+            {[3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setStarsFilter((f) => f === n ? null : n)}
+                className={['shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
+                  starsFilter === n ? 'border-amber-400/60 bg-amber-400/10 text-amber-300' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
+              >
+                {'★'.repeat(n)}{'☆'.repeat(5 - n)}+
+              </button>
+            ))}
+            {tagFrequency.length > 0 && <span className="shrink-0 w-px h-3 bg-mise-800 mx-1" />}
             {tagFrequency.map(([tag, count]) => (
               <button
                 key={tag}
                 type="button"
                 onClick={() => setActiveTag((t) => t === tag ? null : tag)}
                 className={[
-                  'rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
+                  'shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
                   activeTag === tag
                     ? 'border-ember bg-ember/10 text-ember'
                     : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300',
                 ].join(' ')}
               >
                 {tag}
-                <span className={`ml-1.5 text-[10px] ${activeTag === tag ? 'text-ember/70' : 'text-mise-600'}`}>{count}</span>
+                <span className={`ml-1 text-[10px] ${activeTag === tag ? 'text-ember/70' : 'text-mise-600'}`}>{count}</span>
               </button>
             ))}
           </div>
-        )}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setThumbsFilter((f) => f === 'up' ? null : 'up')}
-            className={['rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember flex items-center gap-1',
-              thumbsFilter === 'up' ? 'border-ember bg-ember/10 text-ember' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
-          >
-            <ThumbsUp size={11} className={thumbsFilter === 'up' ? 'fill-current' : ''} /> Liked
-          </button>
-          <button
-            type="button"
-            onClick={() => setThumbsFilter((f) => f === 'down' ? null : 'down')}
-            className={['rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember flex items-center gap-1',
-              thumbsFilter === 'down' ? 'border-rose-400/60 bg-rose-400/10 text-rose-300' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
-          >
-            <ThumbsDown size={11} className={thumbsFilter === 'down' ? 'fill-current' : ''} /> Disliked
-          </button>
-          {[3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setStarsFilter((f) => f === n ? null : n)}
-              className={['rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
-                starsFilter === n ? 'border-amber-400/60 bg-amber-400/10 text-amber-300' : 'border-mise-800 bg-mise-900 text-mise-500 hover:border-mise-700 hover:text-mise-300'].join(' ')}
-            >
-              {'★'.repeat(n)}{'☆'.repeat(5 - n)}+
-            </button>
-          ))}
         </div>
-      </div>
+      )}
 
       {!loading && !error && recipes.length > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
