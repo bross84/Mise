@@ -65,6 +65,8 @@ const inputCls =
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
 
+const INGREDIENT_COLLAPSE_THRESHOLD = 10
+
 function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
   const fileInputRef = useRef(null)
   const urlInputRef = useRef(null)
@@ -806,6 +808,7 @@ function RecipeDetail() {
   const [macroView, setMacroView] = useState('total')
 
   const [editing, setEditing] = useState(false)
+  const [showAllIngredients, setShowAllIngredients] = useState(false)
   const [draft, setDraft] = useState(null)
   const [openIngredientSearchId, setOpenIngredientSearchId] = useState(null)
   const [tagInput, setTagInput] = useState('')
@@ -822,6 +825,7 @@ function RecipeDetail() {
       try {
         setLoading(true)
         setError('')
+        setShowAllIngredients(false)
         const [data, ingredientList, macroData, cookbookList] = await Promise.all([
           getRecipe(id),
           getIngredients(),
@@ -1603,43 +1607,66 @@ function RecipeDetail() {
         </div>
       ) : (
         <>
-          <div className="mt-6 flex flex-col gap-6 lg:grid lg:grid-cols-[1.1fr_1fr]">
+          <div className="mt-6 flex flex-col gap-6 lg:grid lg:grid-cols-[1.1fr_1fr] lg:items-start">
             <section className="rounded border border-theme bg-mise-900 p-4 lg:order-none">
-              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
-              <ul className="mt-4 space-y-2">
-                {scaledIngredients.map((ingredient) => {
-                  const bd = ingredient.breakdown
-                  const macroLine = bd
-                    ? bd.matched
-                      ? `Cal: ${Math.round(bd.calories)}  P: ${Math.round(bd.protein)}g  F: ${Math.round(bd.fat)}g  C: ${Math.round(bd.carbs)}g`
-                      : '—'
-                    : null
-                  return (
-                    <li
-                      key={ingredient.id}
-                      className="flex items-start justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <span className="text-mise-400">
-                          {toTitleCase(ingredient.displayName)}
-                          {!ingredient.linkedToDb && (
-                            <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
-                          )}
-                        </span>
-                        {macroLine !== null && (
-                          <p className="mt-0.5 text-[11px] text-mise-600">{macroLine}</p>
-                        )}
-                      </div>
-                      <span className="shrink-0 text-sm font-medium text-mise-300">
-                        {ingredient.scaledAmount} {ingredient.unit}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
+                <span className="text-[11px] text-mise-600">{scaledIngredients.length} items</span>
+              </div>
+              {(() => {
+                const canCollapse = scaledIngredients.length > INGREDIENT_COLLAPSE_THRESHOLD
+                const expanded = showAllIngredients || !canCollapse
+                const visible = expanded
+                  ? scaledIngredients
+                  : scaledIngredients.slice(0, INGREDIENT_COLLAPSE_THRESHOLD)
+                return (
+                  <>
+                    <ul className={`mt-4 space-y-2 ${expanded && canCollapse ? 'max-h-[28rem] overflow-y-auto pr-1' : ''}`}>
+                      {visible.map((ingredient) => {
+                        const bd = ingredient.breakdown
+                        const macroLine = bd
+                          ? bd.matched
+                            ? `Cal: ${Math.round(bd.calories)}  P: ${Math.round(bd.protein)}g  F: ${Math.round(bd.fat)}g  C: ${Math.round(bd.carbs)}g`
+                            : '—'
+                          : null
+                        return (
+                          <li
+                            key={ingredient.id}
+                            className="flex items-start justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <span className="text-mise-400">
+                                {toTitleCase(ingredient.displayName)}
+                                {!ingredient.linkedToDb && (
+                                  <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
+                                )}
+                              </span>
+                              {macroLine !== null && (
+                                <p className="mt-0.5 text-[11px] text-mise-600">{macroLine}</p>
+                              )}
+                            </div>
+                            <span className="shrink-0 text-sm font-medium text-mise-300">
+                              {ingredient.scaledAmount} {ingredient.unit}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    {canCollapse && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllIngredients((v) => !v)}
+                        className="mt-3 w-full rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      >
+                        {expanded ? 'Show fewer' : `Show all ${scaledIngredients.length} ingredients`}
+                      </button>
+                    )}
+                  </>
+                )
+              })()}
             </section>
 
-            <section className="order-last rounded border border-theme bg-mise-900 p-4 lg:order-none">
+            <section className="order-last rounded border border-theme bg-mise-900 p-4 lg:order-none lg:self-start">
               <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Recipe Details</h2>
               <div className="mt-4 space-y-3">
                 {recipe.notes && (
