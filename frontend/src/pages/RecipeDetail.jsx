@@ -1344,7 +1344,30 @@ function RecipeDetail() {
             />
           </div>
         ) : (
-          <p className="mt-4 text-sm text-mise-500">Servings: {recipe.servings}</p>
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-mise-500">
+            <span>Servings: {recipe.servings}</span>
+            {recipe.cookbook && (
+              <>
+                <span className="text-mise-700" aria-hidden="true">·</span>
+                <span>{recipe.cookbook}</span>
+              </>
+            )}
+            {recipe.source_url && (
+              <>
+                <span className="text-mise-700" aria-hidden="true">·</span>
+                <a
+                  href={recipe.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-ember hover:underline"
+                  title={recipe.source_url}
+                >
+                  {(() => { try { return new URL(recipe.source_url).hostname.replace(/^www\./, '') } catch { return recipe.source_url } })()}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                </a>
+              </>
+            )}
+          </div>
         )}
 
         <StarRating value={recipe.rating || 0} onChange={handleRatingChange} />
@@ -1607,8 +1630,14 @@ function RecipeDetail() {
         </div>
       ) : (
         <>
-          <div className="mt-6 flex flex-col gap-6 lg:grid lg:grid-cols-[1.1fr_1fr] lg:items-start">
-            <section className="rounded border border-theme bg-mise-900 p-4 lg:order-none">
+          {recipe.notes && (
+            <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
+              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Notes</h2>
+              <div className="mt-3 text-sm"><MarkdownText text={recipe.notes} /></div>
+            </section>
+          )}
+          <div className="mt-6 flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-start">
+            <section className="rounded border border-theme bg-mise-900 p-4">
               <div className="flex items-baseline justify-between gap-2">
                 <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
                 <span className="text-[11px] text-mise-600">{scaledIngredients.length} items</span>
@@ -1666,74 +1695,37 @@ function RecipeDetail() {
               })()}
             </section>
 
-            <section className="order-last rounded border border-theme bg-mise-900 p-4 lg:order-none lg:self-start">
-              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Recipe Details</h2>
-              <div className="mt-4 space-y-3">
-                {recipe.notes && (
-                  <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
-                    <span className="block text-xs uppercase tracking-widest text-mise-500">Notes</span>
-                    <div className="mt-1"><MarkdownText text={recipe.notes} /></div>
-                  </div>
-                )}
-                {recipe.cookbook && (
-                  <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
-                    <span className="block text-xs uppercase tracking-widest text-mise-500">Cookbook</span>
-                    <p className="mt-1 text-sm text-mise-300">{recipe.cookbook}</p>
-                  </div>
-                )}
-                {recipe.source_url && (
-                  <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
-                    <span className="block text-xs uppercase tracking-widest text-mise-500">Source</span>
-                    <a
-                      href={recipe.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-flex items-center gap-1.5 text-sm text-ember hover:underline"
-                      title={recipe.source_url}
-                    >
-                      {(() => { try { return new URL(recipe.source_url).hostname.replace(/^www\./, '') } catch { return recipe.source_url } })()}
-                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                    </a>
-                  </div>
-                )}
-                {tags.length > 0 && (
-                  <div className="rounded border border-theme bg-mise-950/50 px-3 py-2">
-                    <span className="block text-xs uppercase tracking-widest text-mise-500">Tags</span>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {tags.map((tag) => (
-                        <span key={tag} className="rounded border border-theme bg-mise-800/40 px-2 py-0.5 text-xs text-mise-400">{tag}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          {recipe.instructions ? (
-            <section className="rounded border border-theme bg-mise-900 p-4 lg:col-span-2 lg:order-none">
-              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Instructions</h2>
-              <div className="mt-4"><MarkdownText text={recipe.instructions} /></div>
-            </section>
-          ) : steps.length > 0 ? (
-            <section className="rounded border border-theme bg-mise-900 p-4 lg:col-span-2 lg:order-none">
-              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Steps</h2>
-              <ol className="mt-4 space-y-3">
-                {steps.map((step, index) => (
-                  <li key={step.id} className="rounded border border-theme bg-mise-950/50 px-4 py-3">
-                    <p className="text-sm font-medium text-mise-500">Step {index + 1}</p>
-                    <div className="mt-1 flex items-center gap-2">
-                      <p className="text-base font-semibold text-mise-300">{step.title}</p>
-                      {step.timer_seconds !== null && step.timer_seconds !== undefined && (
-                        <span className="rounded border border-ember/40 bg-ember/20 px-2 py-0.5 text-xs font-medium text-ember">
-                          {formatTimerLabel(step.timer_seconds)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm text-mise-400">{step.content}</p>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          ) : null}
+            {recipe.instructions ? (
+              <section className="rounded border border-theme bg-mise-900 p-4">
+                <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Instructions</h2>
+                <div className="mt-4"><MarkdownText text={recipe.instructions} /></div>
+              </section>
+            ) : steps.length > 0 ? (
+              <section className="rounded border border-theme bg-mise-900 p-4">
+                <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Steps</h2>
+                <ol className="mt-4 space-y-3">
+                  {steps.map((step, index) => (
+                    <li key={step.id} className="rounded border border-theme bg-mise-950/50 px-4 py-3">
+                      <p className="text-sm font-medium text-mise-500">Step {index + 1}</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <p className="text-base font-semibold text-mise-300">{step.title}</p>
+                        {step.timer_seconds !== null && step.timer_seconds !== undefined && (
+                          <span className="rounded border border-ember/40 bg-ember/20 px-2 py-0.5 text-xs font-medium text-ember">
+                            {formatTimerLabel(step.timer_seconds)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm text-mise-400">{step.content}</p>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : (
+              <section className="rounded border border-dashed border-theme bg-mise-900/40 p-4">
+                <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Instructions</h2>
+                <p className="mt-4 text-sm text-mise-600">No instructions yet — use Edit to add them.</p>
+              </section>
+            )}
           </div>
         </>
       )}
