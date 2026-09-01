@@ -40,6 +40,7 @@ docs/             planning notes
 ### Docker Compose (recommended)
 
 ```bash
+cp .env.example .env   # then fill in the keys — see Configuration below
 docker compose up
 ```
 
@@ -51,6 +52,7 @@ docker compose up
 Backend:
 
 ```bash
+cp .env.example .env   # fill in the keys — see Configuration below
 cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
@@ -67,20 +69,30 @@ npm run dev
 
 ## Configuration
 
-Create a `.env` file in the project root (it is git-ignored):
+### Backend
 
-```
-OPENROUTER_API_KEY=sk-or-...      # required for AI features
-USDA_API_KEY=...                  # optional, enables USDA ingredient search
-```
+Copy `.env.example` to `.env` in the project root (git-ignored) and fill in:
 
-The frontend reads `VITE_API_URL` (defaults to `http://localhost:8001/api`).
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `OPENROUTER_API_KEY` | Yes, for AI features | Recipe/ingredient parsing and tag suggestions, via [OpenRouter](https://openrouter.ai/keys). |
+| `USDA_API_KEY` | Recommended | [USDA FoodData Central](https://fdc.nal.usda.gov/api-key-signup.html) ingredient search. Without it, USDA lookups fall back to the shared `DEMO_KEY` (~30 requests/hour, 50/day per IP). |
 
-The SQLite database is created automatically at `backend/data/mise.db`; lightweight column migrations run on startup.
+Open Food Facts search and barcode lookup need no key.
+
+The `OPENROUTER_API_KEY` can also be set from the app's **Settings** page, which writes it to `backend/app/.env`.
+
+### Frontend
+
+`VITE_API_URL` sets the API base URL. Vite loads `frontend/.env.development` for `npm run dev` and `frontend/.env.production` for `npm run build`; both are committed (no secrets). If unset, the code defaults to `http://localhost:8001/api`. See `frontend/.env.example`.
+
+### Database
+
+SQLite is created automatically at `backend/data/mise.db`; lightweight column migrations run on startup.
 
 ## Deployment
 
-Pushing to `main` builds and publishes `mise-backend` and `mise-frontend` images to GHCR. Deploy with:
+Pushing to `main` builds and publishes `mise-backend` and `mise-frontend` images to GHCR. Deploy with a populated `.env` in the working directory:
 
 ```bash
 docker compose -f docker-compose.prod.yml up -d

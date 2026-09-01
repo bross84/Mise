@@ -11,8 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
-.env.development
-.env.production
+# .env.development and .env.production are committed — they hold no secrets,
+# only VITE_API_URL. Machine-specific overrides go in .env.local (ignored via *.local).
 
 # Editor directories and files
 .vscode/*
