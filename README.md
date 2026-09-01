@@ -1,16 +1,16 @@
 # Mise
 
-Personal recipe manager with serving scaling, macro tracking, and AI-assisted recipe creation. Built with React, FastAPI, and SQLite.
+Personal recipe manager with serving scaling, per-recipe macro calculation, and AI-assisted recipe creation. Built with React, FastAPI, and SQLite.
 
 ## Features
 
 - **Recipe library** – create, edit, tag, rate, and organize recipes by cookbook, with image upload or URL.
 - **Serving scaling** – view ingredients per serving or scale the whole recipe up/down, and save the scaled amounts back.
-- **Macro tracking** – ingredients link to a nutrition database (local, [USDA FoodData Central](https://fdc.nal.usda.gov/), or [Open Food Facts](https://world.openfoodfacts.org/), including barcode lookup); recipe and per-serving macros are computed from the linked ingredients.
+- **Macros** – ingredients link to a nutrition database (local, [USDA FoodData Central](https://fdc.nal.usda.gov/), or [Open Food Facts](https://world.openfoodfacts.org/), including barcode lookup); total and per-serving calories/protein/carbs/fat are calculated from the linked ingredients and displayed on the recipe, with a per-ingredient breakdown. No food diary or day-level tracking.
 - **AI assistance** (via [OpenRouter](https://openrouter.ai/)) – parse a recipe from pasted text or a URL, parse and match free-text ingredient lists to the database, and suggest tags.
 - **Cook mode** – full-screen, checklist-style step view that keeps the screen awake.
 - **Meal planning** – add recipes to a meal plan and generate a consolidated shopping list.
-- **Sharing & export** – shareable recipe page, Markdown export/import, and a MacroFactor import link.
+- **Sharing & export** – Markdown export/import, and a shareable recipe page that embeds schema.org Recipe metadata (with the calculated macros) so it can be pulled straight into [MacroFactor](https://macrofactorapp.com/)'s "import recipe from URL".
 
 ## Tech stack
 
