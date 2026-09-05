@@ -929,6 +929,11 @@ function RecipeDetail() {
     setServings(recipe?.servings ?? 1)
   }
 
+  // Re-pull calculated macros after any change that affects ingredients or servings.
+  const refreshMacros = () => {
+    getRecipeMacros(id).then(setMacros).catch(() => setMacros(null))
+  }
+
   const ingredientFactor = useMemo(() => {
     if (!recipe || recipe.servings <= 0) return 1
     if (mode === 'per-serving') return 1
@@ -989,7 +994,7 @@ function RecipeDetail() {
       const updated = await updateRecipe(id, { servings, ingredients: scaledIngs })
       setRecipe(updated)
       setServings(updated.servings)
-      getRecipeMacros(id).then(setMacros).catch(() => setMacros(null))
+      refreshMacros()
     } catch {
       window.alert('Failed to save scaled recipe.')
     } finally {
@@ -1006,7 +1011,7 @@ function RecipeDetail() {
       const updated = await updateRecipe(id, { servings })
       setRecipe(updated)
       setServings(updated.servings)
-      getRecipeMacros(id).then(setMacros).catch(() => setMacros(null))
+      refreshMacros()
     } catch {
       window.alert('Failed to save servings.')
     } finally {
@@ -1042,7 +1047,7 @@ function RecipeDetail() {
   const handleAssistApplied = (updated) => {
     setRecipe(updated)
     setServings(updated?.servings ?? 1)
-    getRecipeMacros(id).then(setMacros).catch(() => setMacros(null))
+    refreshMacros()
   }
 
   const handleSaveEdit = async () => {
@@ -1075,6 +1080,7 @@ function RecipeDetail() {
       setServings(updated?.servings ?? 1)
       setEditing(false)
       setDraft(null)
+      refreshMacros()
     } catch (requestError) {
       setSaveError(requestError instanceof Error ? requestError.message : 'Failed to save recipe.')
     } finally {
