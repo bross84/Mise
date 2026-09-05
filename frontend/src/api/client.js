@@ -88,6 +88,13 @@ export function updateRecipe(id, data) {
   })
 }
 
+export function aiEditRecipe(id, instruction, conversation = []) {
+  return request(`/recipes/${encodeURIComponent(id)}/ai-edit`, {
+    method: 'POST',
+    body: JSON.stringify({ instruction, conversation }),
+  })
+}
+
 export function deleteRecipe(id) {
   return request(`/recipes/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -190,9 +197,20 @@ export function clearMealPlan() {
   return request('/meal-plan', { method: 'DELETE' })
 }
 
-export function saveOpenRouterKey(key) {
-  return request('/settings/openrouter-key', {
+export function getAiSettings() {
+  return request('/settings/ai')
+}
+
+export function saveAiSettings(data) {
+  return request('/settings/ai', {
     method: 'POST',
-    body: JSON.stringify({ key }),
+    body: JSON.stringify(data),
+  })
+}
+
+export function testAi(prompt = 'Reply with the single word: pong') {
+  return request('/ai/test', {
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
   })
 }

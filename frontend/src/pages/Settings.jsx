@@ -1,19 +1,45 @@
 import { useEffect, useState } from 'react'
-import { deleteBlockedIngredient, getBlockedIngredients, saveOpenRouterKey } from '../api/client.js'
+import {
+  deleteBlockedIngredient,
+  getAiSettings,
+  getBlockedIngredients,
+  saveAiSettings,
+  testAi,
+} from '../api/client.js'
 
 const sectionClassName = 'rounded border border-theme bg-mise-900 p-4'
 const labelClassName = 'mb-2 block text-sm font-medium text-mise-400'
 const inputClassName =
-  'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2.5 pr-24 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+  'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
 function Settings() {
   const [isApiKeyVisible, setIsApiKeyVisible] = useState(false)
-  const [openRouterKey, setOpenRouterKey] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [model, setModel] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [hasKey, setHasKey] = useState(false)
+  const [showProvider, setShowProvider] = useState(false)
   const [apiKeyStatus, setApiKeyStatus] = useState({ type: '', message: '' })
-  const [isSavingApiKey, setIsSavingApiKey] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [testStatus, setTestStatus] = useState({ type: '', message: '' })
+  const [isTesting, setIsTesting] = useState(false)
   const [units, setUnits] = useState('metric')
   const [blocked, setBlocked] = useState([])
   const [blockedLoading, setBlockedLoading] = useState(true)
+
+  useEffect(() => {
+    getAiSettings()
+      .then((data) => {
+        if (!data) return
+        setModel(data.model ?? '')
+        setBaseUrl(data.base_url ?? '')
+        setHasKey(Boolean(data.has_key))
+        if (data.base_url && data.base_url !== 'https://openrouter.ai/api/v1') {
+          setShowProvider(true)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     getBlockedIngredients()
@@ -27,25 +53,44 @@ function Settings() {
     try {
       await deleteBlockedIngredient(id)
     } catch {
-      // optimistic removal stands; reload to sync
       getBlockedIngredients().then((data) => setBlocked(Array.isArray(data) ? data : [])).catch(() => {})
     }
   }
 
-  const handleSaveApiKey = async () => {
+  const handleSave = async () => {
     setApiKeyStatus({ type: '', message: '' })
-    setIsSavingApiKey(true)
-
+    setTestStatus({ type: '', message: '' })
+    setIsSaving(true)
     try {
-      await saveOpenRouterKey(openRouterKey)
-      setApiKeyStatus({ type: 'success', message: 'OpenRouter API key saved.' })
+      const payload = { model: model.trim(), base_url: baseUrl.trim() }
+      if (apiKey.trim()) payload.api_key = apiKey.trim()
+      const data = await saveAiSettings(payload)
+      setHasKey(Boolean(data?.has_key))
+      setApiKey('')
+      setApiKeyStatus({ type: 'success', message: 'AI settings saved.' })
     } catch (error) {
       setApiKeyStatus({
         type: 'error',
-        message: error instanceof Error ? error.message : 'Failed to save OpenRouter API key.',
+        message: error instanceof Error ? error.message : 'Failed to save AI settings.',
       })
     } finally {
-      setIsSavingApiKey(false)
+      setIsSaving(false)
+    }
+  }
+
+  const handleTest = async () => {
+    setTestStatus({ type: '', message: '' })
+    setIsTesting(true)
+    try {
+      const data = await testAi()
+      setTestStatus({ type: 'success', message: `Connected — model replied: “${(data?.response ?? '').slice(0, 60)}”` })
+    } catch (error) {
+      setTestStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Connection test failed.',
+      })
+    } finally {
+      setIsTesting(false)
     }
   }
 
@@ -57,58 +102,121 @@ function Settings() {
       </header>
 
       <div className="mt-6 space-y-4">
-        <section className={sectionClassName} aria-labelledby="settings-api-keys-heading">
-          <h2 id="settings-api-keys-heading" className="text-lg font-semibold text-mise-300">
-            API Keys
+        <section className={sectionClassName} aria-labelledby="settings-ai-heading">
+          <h2 id="settings-ai-heading" className="text-lg font-semibold text-mise-300">
+            AI
           </h2>
-          <p className="mt-1 text-sm text-mise-500">Set your OpenRouter API key for AI-assisted workflows.</p>
+          <p className="mt-1 text-sm text-mise-500">
+            Used for recipe and ingredient parsing, tag suggestions, and the recipe assistant. Works with
+            any OpenAI-compatible API.
+          </p>
 
           <div className="mt-4">
-            <label className={labelClassName} htmlFor="openrouter-api-key">
-              OpenRouter API key
+            <label className={labelClassName} htmlFor="ai-api-key">
+              API key {hasKey && <span className="font-normal text-mise-600">· a key is saved</span>}
             </label>
             <div className="relative">
               <input
-                id="openrouter-api-key"
+                id="ai-api-key"
                 type={isApiKeyVisible ? 'text' : 'password'}
-                value={openRouterKey}
-                onChange={(event) => setOpenRouterKey(event.target.value)}
-                placeholder="sk-or-v1-..."
-                className={inputClassName}
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                placeholder={hasKey ? 'Enter a new key to replace the saved one' : 'sk-or-v1-…'}
+                className={`${inputClassName} pr-20`}
                 autoComplete="off"
               />
               <button
                 type="button"
                 onClick={() => setIsApiKeyVisible((current) => !current)}
-                aria-label={isApiKeyVisible ? 'Hide OpenRouter API key' : 'Show OpenRouter API key'}
+                aria-label={isApiKeyVisible ? 'Hide API key' : 'Show API key'}
                 aria-pressed={isApiKeyVisible}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
               >
                 {isApiKeyVisible ? 'Hide' : 'Show'}
               </button>
             </div>
-            <div className="mt-3 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleSaveApiKey}
-                disabled={isSavingApiKey}
-                className="rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                {isSavingApiKey ? 'Saving...' : 'Save Key'}
-              </button>
-              {apiKeyStatus.message && (
-                <p
-                  className={[
-                    'text-xs',
-                    apiKeyStatus.type === 'success' ? 'text-emerald-300' : 'text-rose-300',
-                  ].join(' ')}
-                  role="status"
-                >
-                  {apiKeyStatus.message}
-                </p>
-              )}
-            </div>
           </div>
+
+          <div className="mt-4">
+            <label className={labelClassName} htmlFor="ai-model">
+              Model
+            </label>
+            <input
+              id="ai-model"
+              type="text"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder="deepseek/deepseek-chat"
+              className={inputClassName}
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setShowProvider((v) => !v)}
+              className="text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              {showProvider ? 'Hide provider settings' : 'Provider settings'}
+            </button>
+            {showProvider && (
+              <div className="mt-3">
+                <label className={labelClassName} htmlFor="ai-base-url">
+                  API base URL
+                </label>
+                <input
+                  id="ai-base-url"
+                  type="url"
+                  value={baseUrl}
+                  onChange={(event) => setBaseUrl(event.target.value)}
+                  placeholder="https://openrouter.ai/api/v1"
+                  className={inputClassName}
+                  autoComplete="off"
+                />
+                <p className="mt-1.5 text-xs text-mise-600">
+                  e.g. <code className="text-mise-500">https://api.openai.com/v1</code> ·{' '}
+                  <code className="text-mise-500">http://localhost:11434/v1</code> for Ollama
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              {isSaving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={handleTest}
+              disabled={isTesting}
+              className="rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              {isTesting ? 'Testing…' : 'Test connection'}
+            </button>
+          </div>
+
+          {apiKeyStatus.message && (
+            <p
+              className={['mt-3 text-xs', apiKeyStatus.type === 'success' ? 'text-emerald-300' : 'text-rose-300'].join(' ')}
+              role="status"
+            >
+              {apiKeyStatus.message}
+            </p>
+          )}
+          {testStatus.message && (
+            <p
+              className={['mt-2 text-xs', testStatus.type === 'success' ? 'text-emerald-300' : 'text-rose-300'].join(' ')}
+              role="status"
+            >
+              {testStatus.message}
+            </p>
+          )}
         </section>
 
         <section className={sectionClassName} aria-labelledby="settings-units-heading">

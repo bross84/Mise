@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import re
+import uuid
 import zipfile
 from datetime import date, datetime
 from typing import Optional
@@ -17,7 +18,14 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.ingredient import Ingredient
 from app.models.recipe import Recipe
-from app.schemas.recipe import RecipeCreate, RecipeUpdate, RecipeResponse
+from app.schemas.recipe import (
+    AiEditRequest,
+    AiEditResponse,
+    Change,
+    RecipeCreate,
+    RecipeResponse,
+    RecipeUpdate,
+)
 from app.services.ai import AIService
 from app.services.matching import IngredientMatcher
 
@@ -465,6 +473,206 @@ async def import_markdown(payload: ImportMarkdownRequest):
         tags=[str(t).lower().strip() for t in (data.get("tags") or []) if str(t).strip()],
         source_url=str(data["source_url"]).strip() if data.get("source_url") else None,
     )
+
+
+AI_EDIT_SYSTEM_PROMPT = """You are a recipe editor for Mise. You are given the current recipe as JSON and one \
+instruction from the cook. Propose the SMALLEST set of changes that satisfies the instruction.
+
+Return ONLY a JSON object with these keys: "reply", "proposed", "changes".
+
+"reply": one or two plain sentences describing what you changed (or why you changed nothing).
+
+"proposed": an object containing ONLY the fields you changed, at their final value. Allowed fields:
+title, servings, tags, ingredients, notes, instructions, cookbook. When you change any ingredient,
+"proposed.ingredients" must be the COMPLETE updated array.
+
+"changes": an array with one entry per discrete, independently-acceptable edit:
+{
+  "op": "update" | "add" | "remove",
+  "field": "ingredients" | "title" | "servings" | "tags" | "notes" | "instructions" | "cookbook",
+  "target_id": "<ingredient id>" for ingredient update/remove, otherwise null,
+  "label": "short human summary, e.g. 'Salt — 10 g → 5 g'",
+  "before": <prior value>,
+  "after": <new value>,
+  "why": "brief reason, referencing the instruction"
+}
+
+Rules:
+- ingredients: keep the "id" of every ingredient you retain. New ingredients get "id": null.
+  Keep "ingredient_id" unchanged unless the ingredient's identity changed; if a rename breaks that
+  link, set "ingredient_id": null and say so in "why".
+- For an ingredient "update", "after" is an object with only the changed keys (e.g. {"amount": 5}).
+- For an ingredient "add", "after" is a full ingredient object {name, amount, unit, ingredient_id, group_name}.
+- amounts are numbers, in each ingredient's existing unit. Convert units only if asked.
+- instructions is a markdown string. Edit it in place; preserve numbering and the author's voice.
+- NEVER change: id, created_at, updated_at, image_url, rating, source_url, steps.
+- If the instruction is unclear, unsafe, or a no-op, return "changes": [] and explain in "reply".
+  Do not guess.
+- Return only the JSON. No prose, no code fences."""
+
+
+_AI_EDIT_ALLOWED_FIELDS = {"title", "servings", "tags", "ingredients", "notes", "instructions", "cookbook"}
+
+
+def _parse_json_block(raw: str) -> dict:
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE).strip()
+    data = json.loads(cleaned)
+    if not isinstance(data, dict):
+        raise ValueError("expected a JSON object")
+    return data
+
+
+def _steps_to_instructions(steps: list) -> str:
+    """Server-side mirror of the frontend's stepsToInstructions."""
+    out: list[str] = []
+    for i, step in enumerate(steps or [], start=1):
+        title = (step.get("title") or "").strip()
+        content = (step.get("content") or "").strip()
+        if title and content:
+            out.append(f"{i}. {title}\n{content}")
+        else:
+            out.append(f"{i}. {title or content}")
+    return "\n\n".join(out).strip()
+
+
+def _recipe_for_ai(recipe: Recipe) -> dict:
+    instructions = (recipe.instructions or "").strip() or _steps_to_instructions(recipe.steps or [])
+    return {
+        "title": recipe.title,
+        "servings": recipe.servings,
+        "tags": recipe.tags or [],
+        "notes": recipe.notes or "",
+        "instructions": instructions,
+        "ingredients": [
+            {
+                "id": ing.get("id"),
+                "name": ing.get("name"),
+                "amount": ing.get("amount"),
+                "unit": ing.get("unit"),
+                "ingredient_id": ing.get("ingredient_id"),
+                "group_name": ing.get("group_name"),
+            }
+            for ing in (recipe.ingredients or [])
+        ],
+    }
+
+
+def _build_edit_messages(recipe_json: dict, conversation: list, instruction: str) -> list[dict]:
+    messages: list[dict] = [
+        {"role": "system", "content": AI_EDIT_SYSTEM_PROMPT},
+        {"role": "user", "content": f"Current recipe (JSON):\n{json.dumps(recipe_json, ensure_ascii=False)}"},
+    ]
+    for turn in (conversation or [])[-8:]:
+        messages.append({"role": turn.role, "content": turn.content})
+    messages.append({"role": "user", "content": f"Instruction: {instruction}"})
+    return messages
+
+
+def _normalize_edit(recipe: Recipe, data: dict) -> AiEditResponse:
+    """Sanitize raw model output: strip forbidden fields, re-key toggles, validate ingredient targets."""
+    reply = str(data.get("reply") or "").strip()
+
+    existing = {str(i.get("id")): i for i in (recipe.ingredients or []) if i.get("id") is not None}
+
+    raw_changes = data.get("changes")
+    changes: list[Change] = []
+    counter = 0
+
+    for rc in raw_changes if isinstance(raw_changes, list) else []:
+        if not isinstance(rc, dict):
+            continue
+        op = rc.get("op")
+        if op not in ("update", "add", "remove"):
+            continue
+
+        field = rc.get("field") or ""
+        target_id = rc.get("target_id")
+        is_ingredient = field == "ingredients" or target_id is not None
+        after = rc.get("after")
+
+        if is_ingredient:
+            field = "ingredients"
+            if op in ("update", "remove"):
+                target_id = str(target_id) if target_id is not None else None
+                if target_id not in existing:
+                    continue
+                if op == "update" and isinstance(after, dict):
+                    current = existing[target_id]
+                    if after and all(current.get(k) == v for k, v in after.items()):
+                        continue  # no-op
+            else:  # add
+                if not isinstance(after, dict) or not str(after.get("name") or "").strip():
+                    continue
+                after = {
+                    "id": f"ing-{uuid.uuid4().hex[:12]}",
+                    "name": str(after.get("name")).strip(),
+                    "amount": after.get("amount") or 0,
+                    "unit": str(after.get("unit") or "").strip(),
+                    "ingredient_id": after.get("ingredient_id"),
+                    "group_name": after.get("group_name"),
+                }
+                target_id = after["id"]
+        else:
+            if field not in _AI_EDIT_ALLOWED_FIELDS or op != "update":
+                continue
+            target_id = None
+            if after == getattr(recipe, field, None):
+                continue  # no-op
+
+        counter += 1
+        changes.append(Change(
+            id=f"chg-{counter}",
+            op=op,
+            field=field or "ingredients",
+            target_id=target_id,
+            label=str(rc.get("label") or "").strip() or f"{op} {field or 'ingredients'}",
+            before=rc.get("before"),
+            after=after,
+            why=str(rc.get("why") or "").strip(),
+        ))
+
+    proposed_raw = data.get("proposed")
+    proposed_clean = (
+        {k: v for k, v in proposed_raw.items() if k in _AI_EDIT_ALLOWED_FIELDS}
+        if isinstance(proposed_raw, dict)
+        else {}
+    )
+    try:
+        proposed = RecipeUpdate(**proposed_clean)
+    except Exception:
+        proposed = RecipeUpdate()
+
+    return AiEditResponse(reply=reply, proposed=proposed, changes=changes)
+
+
+@router.post("/{recipe_id}/ai-edit", response_model=AiEditResponse)
+async def ai_edit_recipe(recipe_id: int, payload: AiEditRequest, db: Session = Depends(get_db)):
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    instruction = payload.instruction.strip()
+    if not instruction:
+        raise HTTPException(status_code=422, detail="Describe the change you want.")
+    if len(instruction) > 2000:
+        raise HTTPException(status_code=422, detail="Instruction is too long (2000 character maximum).")
+
+    messages = _build_edit_messages(_recipe_for_ai(recipe), payload.conversation, instruction)
+
+    try:
+        raw = await AIService()._call(messages, response_format={"type": "json_object"})
+    except ValueError as exc:  # missing API key
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        logger.error("AI edit failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    try:
+        data = _parse_json_block(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"AI returned invalid JSON: {exc}") from exc
+
+    return _normalize_edit(recipe, data)
 
 
 @router.get("/{recipe_id}/macros", response_model=MacrosResponse)

@@ -7,7 +7,7 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
 - **Recipe library** – create, edit, tag, rate, and organize recipes by cookbook, with image upload or URL.
 - **Serving scaling** – view ingredients per serving or scale the whole recipe up/down, and save the scaled amounts back.
 - **Macros** – ingredients link to a nutrition database (local, [USDA FoodData Central](https://fdc.nal.usda.gov/), or [Open Food Facts](https://world.openfoodfacts.org/), including barcode lookup); total and per-serving calories/protein/carbs/fat are calculated from the linked ingredients and displayed on the recipe, with a per-ingredient breakdown. No food diary or day-level tracking.
-- **AI assistance** (via [OpenRouter](https://openrouter.ai/)) – parse a recipe from pasted text or a URL, parse and match free-text ingredient lists to the database, and suggest tags.
+- **AI assistance** (any OpenAI-compatible API, [OpenRouter](https://openrouter.ai/) by default) – parse a recipe from pasted text or a URL, parse and match free-text ingredient lists to the database, suggest tags, and adjust or correct an individual recipe by describing the change and accepting or declining the proposed edits.
 - **Cook mode** – full-screen, checklist-style step view that keeps the screen awake.
 - **Meal planning** – add recipes to a meal plan and generate a consolidated shopping list.
 - **Sharing & export** – Markdown export/import, and a shareable recipe page that embeds schema.org Recipe metadata (with the calculated macros) so it can be pulled straight into [MacroFactor](https://macrofactorapp.com/)'s "import recipe from URL".
@@ -75,12 +75,14 @@ Copy `.env.example` to `.env` in the project root (git-ignored) and fill in:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `OPENROUTER_API_KEY` | Yes, for AI features | Recipe/ingredient parsing and tag suggestions, via [OpenRouter](https://openrouter.ai/keys). |
+| `AI_API_KEY` | Yes, for AI features | API key for any OpenAI-compatible provider. `OPENROUTER_API_KEY` is still read as a fallback. |
+| `AI_MODEL` | No | Model id. Default `deepseek/deepseek-chat`. |
+| `AI_BASE_URL` | No | API base URL. Default `https://openrouter.ai/api/v1`. Point it at OpenAI, Groq, a local Ollama server, etc. |
 | `USDA_API_KEY` | Recommended | [USDA FoodData Central](https://fdc.nal.usda.gov/api-key-signup.html) ingredient search. Without it, USDA lookups fall back to the shared `DEMO_KEY` (~30 requests/hour, 50/day per IP). |
 
 Open Food Facts search and barcode lookup need no key.
 
-The `OPENROUTER_API_KEY` can also be set from the app's **Settings** page, which writes it to `backend/app/.env`.
+The API key, model, and base URL can also be set from the app's **Settings** page, which writes them to `backend/app/.env`.
 
 ### Frontend
 

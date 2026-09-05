@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { CalendarCheck, CalendarPlus, ChefHat, Download, Pencil, Share2, Star, Trash2, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, ChefHat, Download, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
+import AiAssistPanel from '../components/AiAssistPanel.jsx'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import {
   blockIngredient,
@@ -795,6 +796,7 @@ function RecipeDetail() {
   const { items: mealPlanItems, recipeIds: mealPlanRecipeIds, add: addToMealPlan, remove: removeFromMealPlan } = useMealPlan()
   const [addingToMealPlan, setAddingToMealPlan] = useState(false)
   const [cookMode, setCookMode] = useState(false)
+  const [assistOpen, setAssistOpen] = useState(false)
   const [savingScale, setSavingScale] = useState(false)
   const [cookbooks, setCookbooks] = useState([])
   const [recipe, setRecipe] = useState(null)
@@ -991,6 +993,12 @@ function RecipeDetail() {
     setSaveError('')
   }
 
+  const handleAssistApplied = (updated) => {
+    setRecipe(updated)
+    setServings(updated?.servings ?? 1)
+    getRecipeMacros(id).then(setMacros).catch(() => setMacros(null))
+  }
+
   const handleSaveEdit = async () => {
     setSaving(true)
     setSaveError('')
@@ -1142,6 +1150,13 @@ function RecipeDetail() {
         onExit={() => setCookMode(false)}
       />
     )}
+    <AiAssistPanel
+      recipeId={id}
+      recipe={recipe}
+      open={assistOpen}
+      onClose={() => setAssistOpen(false)}
+      onApplied={handleAssistApplied}
+    />
     <section className="mx-auto w-full max-w-5xl">
       <div className="sticky top-16 md:top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex items-center justify-end gap-2">
         {editing ? (
@@ -1198,6 +1213,15 @@ function RecipeDetail() {
               <span className="hidden md:inline">
                 {mealPlanRecipeIds.has(Number(id)) ? 'On Meal Plan' : 'Meal Plan'}
               </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAssistOpen(true)}
+              aria-label="Open recipe assistant"
+              className="inline-flex items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              <Sparkles size={14} />
+              <span className="hidden md:inline">Assist</span>
             </button>
             <button
               type="button"

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel
 
 
@@ -59,3 +59,30 @@ class RecipeResponse(RecipeBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AiEditMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class AiEditRequest(BaseModel):
+    instruction: str
+    conversation: list[AiEditMessage] = []
+
+
+class Change(BaseModel):
+    id: str
+    op: Literal["update", "add", "remove"]
+    field: str
+    target_id: Optional[str] = None
+    label: str
+    before: Any = None
+    after: Any = None
+    why: str = ""
+
+
+class AiEditResponse(BaseModel):
+    reply: str
+    proposed: RecipeUpdate = RecipeUpdate()
+    changes: list[Change] = []
