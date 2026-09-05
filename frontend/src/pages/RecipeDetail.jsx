@@ -1078,9 +1078,10 @@ function RecipeDetail() {
   }
 
   // Rename a section: applies to the row at startIndex and every contiguous row below it
-  // that shares the same original group_name.
+  // that shares the same original group_name. Keeps the raw string while typing (spaces
+  // and all); handleSaveEdit and groupIngredients normalize blank -> null.
   const renameDraftSection = (startIndex, value) => {
-    const nextGroup = value.trim() || null
+    const nextGroup = value === '' ? null : value
     setDraft((current) => {
       const rows = [...current.ingredients]
       const original = (rows[startIndex]?.group_name || '') || null
