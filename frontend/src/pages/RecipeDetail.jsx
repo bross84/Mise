@@ -629,7 +629,24 @@ function makeDraftIngredient(values = {}) {
     amount: values.amount ?? '',
     unit: values.unit ?? '',
     ingredient_id: values.ingredient_id ?? null,
+    group_name: values.group_name ?? null,
   }
+}
+
+// Collapses an ordered ingredient list into contiguous { name, items } sections.
+// A null/blank group_name yields a section with name === null (rendered without a heading).
+function groupIngredients(list) {
+  const sections = []
+  for (const ingredient of list) {
+    const name = (ingredient.group_name || '').trim() || null
+    const last = sections[sections.length - 1]
+    if (last && last.name === name) {
+      last.items.push(ingredient)
+    } else {
+      sections.push({ name, items: [ingredient] })
+    }
+  }
+  return sections
 }
 
 function recipeToDraft(recipe) {
@@ -733,37 +750,48 @@ function CookMode({ recipe, scaledIngredients, steps, onExit }) {
 
         <section className="rounded border border-theme bg-mise-900 p-4">
           <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
-          <ul className="mt-4 space-y-2">
-            {scaledIngredients.map((ingredient) => {
-              const done = checked.has(ingredient.id)
-              return (
-                <li key={ingredient.id}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(ingredient.id)}
-                    className={`flex w-full items-center gap-3 rounded border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember ${
-                      done
-                        ? 'border-mise-800 bg-mise-950/30 opacity-50'
-                        : 'border-theme bg-mise-950/50 hover:border-mise-700'
-                    }`}
-                  >
-                    <span className={[
-                      'flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs font-bold transition',
-                      done ? 'border-ember bg-ember text-white' : 'border-mise-700',
-                    ].join(' ')}>
-                      {done && '✓'}
-                    </span>
-                    <span className={`flex-1 text-sm ${done ? 'line-through text-mise-600' : 'text-mise-400'}`}>
-                      {ingredient.displayName ?? ingredient.name}
-                    </span>
-                    <span className={`shrink-0 text-sm font-medium ${done ? 'text-mise-600' : 'text-mise-300'}`}>
-                      {ingredient.scaledAmount} {ingredient.unit}
-                    </span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+          <div className="mt-4 space-y-4">
+            {groupIngredients(scaledIngredients).map((section, si) => (
+              <div key={`${section.name ?? "ungrouped"}-${si}`}>
+                {section.name && (
+                  <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-mise-500">
+                    {section.name}
+                  </h3>
+                )}
+                <ul className="space-y-2">
+                  {section.items.map((ingredient) => {
+                    const done = checked.has(ingredient.id)
+                    return (
+                      <li key={ingredient.id}>
+                        <button
+                          type="button"
+                          onClick={() => toggle(ingredient.id)}
+                          className={`flex w-full items-center gap-3 rounded border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember ${
+                            done
+                              ? 'border-mise-800 bg-mise-950/30 opacity-50'
+                              : 'border-theme bg-mise-950/50 hover:border-mise-700'
+                          }`}
+                        >
+                          <span className={[
+                            'flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs font-bold transition',
+                            done ? 'border-ember bg-ember text-white' : 'border-mise-700',
+                          ].join(' ')}>
+                            {done && '✓'}
+                          </span>
+                          <span className={`flex-1 text-sm ${done ? 'line-through text-mise-600' : 'text-mise-400'}`}>
+                            {ingredient.displayName ?? ingredient.name}
+                          </span>
+                          <span className={`shrink-0 text-sm font-medium ${done ? 'text-mise-600' : 'text-mise-300'}`}>
+                            {ingredient.scaledAmount} {ingredient.unit}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
         </section>
 
         {recipe.instructions ? (
@@ -1019,6 +1047,7 @@ function RecipeDetail() {
           amount: Number(ing.amount) || 0,
           unit: ing.unit.trim(),
           ingredient_id: ing.ingredient_id ?? null,
+          group_name: (ing.group_name || '').trim() || null,
         })),
     }
 
@@ -1046,6 +1075,22 @@ function RecipeDetail() {
         ing.id === ingId ? { ...ing, [field]: value } : ing,
       ),
     }))
+  }
+
+  // Rename a section: applies to the row at startIndex and every contiguous row below it
+  // that shares the same original group_name.
+  const renameDraftSection = (startIndex, value) => {
+    const nextGroup = value.trim() || null
+    setDraft((current) => {
+      const rows = [...current.ingredients]
+      const original = (rows[startIndex]?.group_name || '') || null
+      for (let i = startIndex; i < rows.length; i += 1) {
+        const rowGroup = (rows[i].group_name || '') || null
+        if (i > startIndex && rowGroup !== original) break
+        rows[i] = { ...rows[i], group_name: nextGroup }
+      }
+      return { ...current, ingredients: rows }
+    })
   }
 
   const addTag = (value) => {
@@ -1515,7 +1560,10 @@ function RecipeDetail() {
                 onClick={() =>
                   setDraft((current) => ({
                     ...current,
-                    ingredients: [...current.ingredients, makeDraftIngredient()],
+                    ingredients: [
+                      ...current.ingredients,
+                      makeDraftIngredient({ group_name: current.ingredients.at(-1)?.group_name ?? null }),
+                    ],
                   }))
                 }
                 className="rounded border border-mise-800 px-3 py-1.5 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
@@ -1524,8 +1572,33 @@ function RecipeDetail() {
               </button>
             </div>
             <div className="space-y-2">
-              {draft.ingredients.map((ing, index) => (
-                <div key={ing.id} className="grid grid-cols-12 gap-2 rounded border border-theme bg-mise-950/50 p-3">
+              {draft.ingredients.map((ing, index) => {
+                const prev = draft.ingredients[index - 1]
+                const startsSection =
+                  index === 0 || ((prev?.group_name || '') || null) !== ((ing.group_name || '') || null)
+                return (
+                <div key={ing.id} className={`group/ing ${startsSection && index > 0 ? 'pt-3' : ''}`}>
+                {startsSection ? (
+                  <input
+                    type="text"
+                    aria-label={`Section for ingredient ${index + 1}`}
+                    value={ing.group_name || ''}
+                    onChange={(e) => renameDraftSection(index, e.target.value)}
+                    placeholder="Section (optional) — e.g. Marinade"
+                    className={`${inputCls} mb-2 border-dashed text-mise-400`}
+                  />
+                ) : (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => renameDraftSection(index, 'New section')}
+                      className="mb-1 text-[10px] uppercase tracking-wider text-mise-600 opacity-0 transition hover:text-mise-400 focus:opacity-100 group-hover/ing:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                    >
+                      + section here
+                    </button>
+                  </div>
+                )}
+                <div className="grid grid-cols-12 gap-2 rounded border border-theme bg-mise-950/50 p-3">
                   <label htmlFor={`edit-ing-name-${ing.id}`} className="sr-only">Ingredient {index + 1} name</label>
                   <input
                     id={`edit-ing-name-${ing.id}`}
@@ -1589,7 +1662,9 @@ function RecipeDetail() {
                     </div>
                   )}
                 </div>
-              ))}
+                </div>
+                )
+              })}
             </div>
           </section>
 
@@ -1674,37 +1749,48 @@ function RecipeDetail() {
                   : scaledIngredients.slice(0, INGREDIENT_COLLAPSE_THRESHOLD)
                 return (
                   <>
-                    <ul className={`mt-4 space-y-2 ${expanded && canCollapse ? 'max-h-[28rem] overflow-y-auto pr-1' : ''}`}>
-                      {visible.map((ingredient) => {
-                        const bd = ingredient.breakdown
-                        const macroLine = bd
-                          ? bd.matched
-                            ? `Cal: ${Math.round(bd.calories)}  P: ${Math.round(bd.protein)}g  F: ${Math.round(bd.fat)}g  C: ${Math.round(bd.carbs)}g`
-                            : '—'
-                          : null
-                        return (
-                          <li
-                            key={ingredient.id}
-                            className="flex items-start justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
-                          >
-                            <div className="min-w-0">
-                              <span className="text-mise-400">
-                                {toTitleCase(ingredient.displayName)}
-                                {!ingredient.linkedToDb && (
-                                  <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
-                                )}
-                              </span>
-                              {macroLine !== null && (
-                                <p className="mt-0.5 text-[11px] text-mise-600">{macroLine}</p>
-                              )}
-                            </div>
-                            <span className="shrink-0 text-sm font-medium text-mise-300">
-                              {ingredient.scaledAmount} {ingredient.unit}
-                            </span>
-                          </li>
-                        )
-                      })}
-                    </ul>
+                    <div className="mt-4 space-y-4">
+                      {groupIngredients(visible).map((section, si) => (
+                        <div key={`${section.name ?? "ungrouped"}-${si}`}>
+                          {section.name && (
+                            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-mise-500">
+                              {section.name}
+                            </h3>
+                          )}
+                          <ul className="space-y-2">
+                            {section.items.map((ingredient) => {
+                              const bd = ingredient.breakdown
+                              const macroLine = bd
+                                ? bd.matched
+                                  ? `Cal: ${Math.round(bd.calories)}  P: ${Math.round(bd.protein)}g  F: ${Math.round(bd.fat)}g  C: ${Math.round(bd.carbs)}g`
+                                  : '—'
+                                : null
+                              return (
+                                <li
+                                  key={ingredient.id}
+                                  className="flex items-start justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
+                                >
+                                  <div className="min-w-0">
+                                    <span className="text-mise-400">
+                                      {toTitleCase(ingredient.displayName)}
+                                      {!ingredient.linkedToDb && (
+                                        <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
+                                      )}
+                                    </span>
+                                    {macroLine !== null && (
+                                      <p className="mt-0.5 text-[11px] text-mise-600">{macroLine}</p>
+                                    )}
+                                  </div>
+                                  <span className="shrink-0 text-sm font-medium text-mise-300">
+                                    {ingredient.scaledAmount} {ingredient.unit}
+                                  </span>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
                     {canCollapse && (
                       <button
                         type="button"
