@@ -2,6 +2,10 @@
 
 Personal recipe manager with serving scaling, per-recipe macro calculation, and AI-assisted recipe creation. Built with React, FastAPI, and SQLite.
 
+<p align="center">
+  <img src="assets/recipe-browser.png" alt="Mise recipe browser — a grid of recipe cards with photos, ratings, and serving counts" width="900">
+</p>
+
 ## Features
 
 - **Recipe library** – create, edit, tag, rate, and organize recipes by cookbook, with image upload or URL.
@@ -12,13 +16,38 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
 - **Meal planning** – add recipes to a meal plan and generate a consolidated shopping list.
 - **Sharing & export** – Markdown export/import, and a shareable recipe page that embeds schema.org Recipe metadata (with the calculated macros) so it can be pulled straight into [MacroFactor](https://macrofactorapp.com/)'s "import recipe from URL".
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="assets/recipe-detail.png" alt="Recipe detail — macros, serving scaling, per-ingredient breakdown, and instructions"><br>
+      <sub><b>Recipe detail.</b> Calculated total and per-serving macros, the two-mode serving scaler, and a per-ingredient nutrition breakdown next to the instructions.</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/add-recipe.png" alt="Add recipe form with an ingredient text box"><br>
+      <sub><b>Add a recipe.</b> Paste a free-text ingredient list; the AI parses amounts, units, and section headers, then matches each item to the nutrition database.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="assets/meal-plan.png" alt="Meal plan list with a shopping list button"><br>
+      <sub><b>Meal plan.</b> Collect recipes for the week and generate one consolidated, de-duplicated shopping list.</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/ingredient-database.png" alt="Ingredient database table with calorie values"><br>
+      <sub><b>Ingredient database.</b> Every linked ingredient, sourced from USDA, Open Food Facts, or entered by hand.</sub>
+    </td>
+  </tr>
+</table>
+
 ## Tech stack
 
 | Layer    | Stack                                                            |
 | -------- | --------------------------------------------------------------- |
 | Frontend | React 19, React Router, Vite, Tailwind CSS                      |
 | Backend  | FastAPI, SQLAlchemy, SQLite, httpx, RapidFuzz                   |
-| AI       | OpenRouter (`deepseek/deepseek-chat` by default)               |
+| AI       | Any OpenAI-compatible API (OpenRouter + `deepseek/deepseek-chat` by default) |
 | Infra    | Docker Compose; images published to GHCR via GitHub Actions    |
 
 ## Project structure
