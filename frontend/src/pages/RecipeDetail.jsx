@@ -989,8 +989,26 @@ function RecipeDetail() {
       const updated = await updateRecipe(id, { servings, ingredients: scaledIngs })
       setRecipe(updated)
       setServings(updated.servings)
+      getRecipeMacros(id).then(setMacros).catch(() => setMacros(null))
     } catch {
       window.alert('Failed to save scaled recipe.')
+    } finally {
+      setSavingScale(false)
+    }
+  }
+
+  // Per-serving mode: persist only the serving count. Ingredient amounts are untouched —
+  // the same dish, cut into more or fewer portions, so per-serving macros shift.
+  const handleSaveServings = async () => {
+    if (!recipe || servings === recipe.servings) return
+    setSavingScale(true)
+    try {
+      const updated = await updateRecipe(id, { servings })
+      setRecipe(updated)
+      setServings(updated.servings)
+      getRecipeMacros(id).then(setMacros).catch(() => setMacros(null))
+    } catch {
+      window.alert('Failed to save servings.')
     } finally {
       setSavingScale(false)
     }
@@ -1484,7 +1502,8 @@ function RecipeDetail() {
       )}
 
       {!editing && (
-        <div className="mt-6 flex w-full flex-col gap-3 rounded border border-theme bg-mise-900 px-4 py-3 sm:inline-flex sm:w-auto sm:flex-row sm:items-center sm:gap-4">
+        <div className="mt-6 w-full rounded border border-theme bg-mise-900 px-4 py-3 sm:inline-block sm:w-auto">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="flex items-center gap-4" role="radiogroup" aria-label="Serving mode">
             {[
               { value: 'per-serving', label: 'Per Serving' },
@@ -1537,16 +1556,26 @@ function RecipeDetail() {
             <p className="text-xs text-mise-500">servings</p>
           </div>
 
-          {mode === 'scale' && servings !== recipe.servings && (
+          {servings !== recipe.servings && (
             <button
               type="button"
-              onClick={handleSaveScale}
+              onClick={mode === 'scale' ? handleSaveScale : handleSaveServings}
               disabled={savingScale}
-              className="ml-2 rounded border border-mise-700 bg-mise-800/60 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:bg-mise-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="rounded border border-mise-700 bg-mise-800/60 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:bg-mise-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:ml-2"
             >
-              {savingScale ? 'Saving…' : `Save as ${servings} servings`}
+              {savingScale
+                ? 'Saving…'
+                : mode === 'scale'
+                  ? `Rescale to ${servings} servings`
+                  : `Save as ${servings} servings`}
             </button>
           )}
+        </div>
+        <p className="mt-2.5 text-[11px] leading-snug text-mise-600">
+          {mode === 'scale'
+            ? 'Scale Recipe adjusts every ingredient amount to the new serving count.'
+            : 'Per Serving splits the recipe into more or fewer portions — ingredient amounts don’t change, only the per-serving macros.'}
+        </p>
         </div>
       )}
 
