@@ -197,11 +197,28 @@ INGREDIENT_PARSE_SYSTEM_PROMPT = """You are an ingredient parser. Convert ingred
 
 Rules:
 - Return ONLY a JSON array, no explanation, no code fences
-- One object per ingredient line: {"raw": "original line", "name": "ingredient name", "amount": "quantity as a string or null", "unit": "unit or null", "group_name": "section name or null"}
+- One object per ingredient: {"raw": "original text", "name": "ingredient name", "amount": "quantity as a string or null", "unit": "unit or null", "group_name": "section name or null"}
 - Detect section headers (e.g. "***Beef Mix***", "For the Sauce:", "## Marinade") — assign their name as group_name to all following ingredients until the next header
 - Skip blank lines and section header lines themselves (they become group_name, not ingredients)
 - amount and unit should reflect exactly what is written; use null if not present
-- Do not invent amounts or units that are not in the text"""
+- Do not invent amounts or units that are not in the text
+- A single line may list several ingredients that share one amount, written as
+  "10g salt, black pepper, chili powder" or "oregano, basil, thyme - 1 tsp each".
+  Emit one object per ingredient, each carrying the shared amount and unit.
+  Only split this way when EVERY comma-separated part is a plain ingredient name.
+  Do NOT split when any part is a preparation note or descriptor (diced, minced,
+  drained, softened, to taste, room temperature, plus more for serving, low sodium,
+  canned, packed) — keep the whole line as one ingredient in that case.
+
+Examples:
+  "10g salt, black pepper, garlic powder" ->
+    [{"raw":"10g salt, black pepper, garlic powder","name":"salt","amount":"10","unit":"g","group_name":null},
+     {"raw":"10g salt, black pepper, garlic powder","name":"black pepper","amount":"10","unit":"g","group_name":null},
+     {"raw":"10g salt, black pepper, garlic powder","name":"garlic powder","amount":"10","unit":"g","group_name":null}]
+  "1 tsp each: oregano, basil, thyme" -> three objects, each amount "1" unit "tsp"
+  "2 tomatoes, diced" -> one object: name "tomatoes", amount "2", unit null
+  "chicken broth, low sodium" -> one object: name "chicken broth, low sodium", amount null, unit null
+"""
 
 
 TAG_GENERATION_SYSTEM_PROMPT = """Based on the recipe name and ingredient list provided, suggest 3-5 short tags describing the recipe.
