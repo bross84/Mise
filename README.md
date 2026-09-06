@@ -1,6 +1,6 @@
 # Mise
 
-Personal recipe manager with serving scaling, per-recipe macro calculation, and AI-assisted recipe creation. Built with React, FastAPI, and SQLite.
+Personal recipe manager with serving scaling, per-recipe macro calculation, and AI-assisted recipe creation and editing. Built with React, FastAPI, and SQLite.
 
 <p align="center">
   <img src="assets/recipe-browser.png" alt="Mise recipe browser — a grid of recipe cards with photos, ratings, and serving counts" width="900">
@@ -8,10 +8,10 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
 
 ## Features
 
-- **Recipe library** – create, edit, tag, rate, and organize recipes by cookbook, with image upload or URL.
-- **Serving scaling** – view ingredients per serving or scale the whole recipe up/down, and save the scaled amounts back.
+- **Recipe library** – create, edit, tag, rate, and organize recipes by cookbook, with image upload or URL. Ingredients can be split into labeled sections (marinade, sauce, …) that carry through the recipe view, cook mode, and Markdown export.
+- **Serving scaling** – two modes, either saved back to the recipe. *Per Serving* re-portions a fixed dish: save a new serving count and the ingredient amounts stay put while the per-serving macros shift. *Scale Recipe* rewrites every ingredient amount for a new yield.
 - **Macros** – ingredients link to a nutrition database (local, [USDA FoodData Central](https://fdc.nal.usda.gov/), or [Open Food Facts](https://world.openfoodfacts.org/), including barcode lookup); total and per-serving calories/protein/carbs/fat are calculated from the linked ingredients and displayed on the recipe, with a per-ingredient breakdown. No food diary or day-level tracking.
-- **AI assistance** (any OpenAI-compatible API, [OpenRouter](https://openrouter.ai/) by default) – parse a recipe from pasted text or a URL, parse and match free-text ingredient lists to the database, suggest tags, and adjust or correct an individual recipe by describing the change and accepting or declining the proposed edits.
+- **AI assistance** (any OpenAI-compatible API, [OpenRouter](https://openrouter.ai/) by default) – import a recipe from pasted text or a URL; turn a free-text ingredient list into structured rows (reading section headers and splitting shared-quantity lines like `10g salt, black pepper, chili powder` into separate items) and match each to the nutrition database; suggest tags; and a per-recipe **edit assistant** — describe an adjustment or correction in plain language and accept or decline each proposed change before it's saved.
 - **Cook mode** – full-screen, checklist-style step view that keeps the screen awake.
 - **Meal planning** – add recipes to a meal plan and generate a consolidated shopping list.
 - **Sharing & export** – Markdown export/import, and a shareable recipe page that embeds schema.org Recipe metadata (with the calculated macros) so it can be pulled straight into [MacroFactor](https://macrofactorapp.com/)'s "import recipe from URL".
@@ -61,6 +61,7 @@ backend/          FastAPI app
     schemas/      Pydantic schemas
 frontend/         React + Vite app
   src/pages/      RecipeBrowser, RecipeDetail, AddRecipe, IngredientDatabase, Settings
+  src/components/ AiAssistPanel, AiChangeCard, shopping-list & unit-converter modals
 docs/             planning notes
 ```
 
@@ -123,10 +124,19 @@ SQLite is created automatically at `backend/data/mise.db`; lightweight column mi
 
 ## Deployment
 
-Pushing to `main` builds and publishes `mise-backend` and `mise-frontend` images to GHCR. Deploy with a populated `.env` in the working directory:
+Pushing to `main` builds and publishes `mise-backend` and `mise-frontend` images to GHCR (the `:latest` tag). Deploy with a populated `.env` in the working directory:
 
 ```bash
 docker compose -f docker-compose.prod.yml up -d
 ```
 
 The production frontend is served by nginx on port 8080.
+
+To update a running server once the "Build & Publish Docker Images" workflow has finished:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+No `git pull` is needed — the app code ships in the images. SQLite column migrations run automatically on backend startup, and the `mise_data` / `mise_uploads` volumes persist across updates.
