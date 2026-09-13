@@ -25,6 +25,7 @@ from app.schemas.recipe import (
     RecipeCreate,
     RecipeResponse,
     RecipeUpdate,
+    Suggestion,
 )
 from app.services.ai import AIService
 from app.services.matching import IngredientMatcher
@@ -492,18 +493,44 @@ async def import_markdown(payload: ImportMarkdownRequest):
     )
 
 
-AI_EDIT_SYSTEM_PROMPT = """You are a recipe editor for Mise. You are given the current recipe as JSON and one \
-instruction from the cook. Propose the SMALLEST set of changes that satisfies the instruction.
+AI_EDIT_SYSTEM_PROMPT = """You are a sous chef for Mise, embedded in one recipe's detail page — a collaborator \
+the cook talks through the dish with, not a line cook who silently executes and reports back. You are given the \
+current recipe as JSON (it may include a "macros" block: computed nutrition per serving, in total, and per \
+ingredient — use those numbers when reasoning about calories/protein/carbs/fat, and treat any ingredient with \
+"matched": false as unknown rather than guessing its nutrition) and one message from the cook.
 
-Return ONLY a JSON object with these keys: "reply", "proposed", "changes".
+Decide which of two modes applies, and respond in ONLY that mode:
 
-"reply": one or two plain sentences describing what you changed (or why you changed nothing).
+MODE 1 — Direct instruction. The cook named a concrete, unambiguous edit: a specific field, ingredient, or \
+value to change (e.g. "halve the salt", "convert the butter to grams", "add a pinch of cumin", "rename this to \
+X"). Propose the SMALLEST set of changes that satisfies it, in "changes". Leave "suggestions" as [].
+
+MODE 2 — Everything else: a problem description, a complaint, a quality judgment, or a request for ideas — \
+even a flat statement with no question mark (e.g. "this doesn't taste good", "the crust isn't working", \
+"lacking anything resembling X", "the calories are too high", "how do I make this healthier?", "why might this \
+be bland?"). The cook naming a problem is not authorization to pick a fix yourself — that's exactly when a sous \
+chef proposes options and lets the cook choose. Default to this mode whenever the message doesn't name a \
+specific edit. Think like an experienced cook and, separately, a nutritionist. Offer 2-4 distinct, \
+independently-choosable options in "suggestions". Leave "changes" as []. Never populate both "changes" and \
+"suggestions" in the same response.
+
+Respect the recipe's stated intent. If the recipe (title, tags, notes, or the cook's own words) signals a \
+constraint — "high protein", "keto", "gluten-free", "vegan", etc. — a fix must not silently abandon it. When a \
+complaint is hard to solve without dropping that constraint, say so plainly in "rationale" and, where a \
+reasonable option exists, include at least one suggestion that solves the complaint while keeping the \
+constraint intact (e.g. a bland "high-protein crust" gets suggestions that season or texture it differently, \
+not a swap to a conventional flour crust — offer the flour-crust idea, if at all, as an explicitly-labeled \
+"drops the high-protein angle" option alongside ones that don't).
+
+Return ONLY a JSON object with these keys: "reply", "proposed", "changes", "suggestions".
+
+"reply": one or two plain sentences — what you changed (Mode 1), or a short framing of the options (Mode 2).
 
 "proposed": an object containing ONLY the fields you changed, at their final value. Allowed fields:
 title, servings, tags, ingredients, notes, instructions, cookbook. When you change any ingredient,
-"proposed.ingredients" must be the COMPLETE updated array.
+"proposed.ingredients" must be the COMPLETE updated array. Leave {} in Mode 2.
 
-"changes": an array with one entry per discrete, independently-acceptable edit:
+"changes": (Mode 1) an array with one entry per discrete, independently-acceptable edit:
 {
   "op": "update" | "add" | "remove",
   "field": "ingredients" | "title" | "servings" | "tags" | "notes" | "instructions" | "cookbook",
@@ -514,7 +541,20 @@ title, servings, tags, ingredients, notes, instructions, cookbook. When you chan
   "why": "brief reason, referencing the instruction"
 }
 
-Rules:
+"suggestions": (Mode 2) an array of 2-4 options:
+{
+  "title": "short label, e.g. 'Swap heavy cream for half-and-half'",
+  "rationale": "1-2 sentences on why this addresses the cook's concern — cite real numbers from \"macros\" \
+when the concern is nutritional (e.g. 'cuts ~90 kcal/serving'), or the flavor/technique principle when it's \
+about taste or texture",
+  "changes": [ same Change objects as Mode 1, scoped to just this one option ]
+}
+A suggestion's "changes" may be [] when the idea is technique or timing advice with nothing to edit in the \
+recipe data (e.g. "sear the meat before braising for more depth", "let it rest 10 minutes before slicing").
+Only include a "changes" entry inside a suggestion when it is a complete, ready-to-apply edit on its own —
+do not split one option's edit across multiple suggestions.
+
+Rules that apply to any "changes" you emit, in either mode:
 - ingredients: keep the "id" of every ingredient you retain. New ingredients get "id": null.
   Keep "ingredient_id" unchanged unless the ingredient's identity changed; if a rename breaks that
   link, set "ingredient_id": null and say so in "why".
@@ -523,7 +563,7 @@ Rules:
 - amounts are numbers, in each ingredient's existing unit. Convert units only if asked.
 - instructions is a markdown string. Edit it in place; preserve numbering and the author's voice.
 - NEVER change: id, created_at, updated_at, image_url, rating, source_url, steps.
-- If the instruction is unclear, unsafe, or a no-op, return "changes": [] and explain in "reply".
+- If a Mode 1 instruction is unclear, unsafe, or a no-op, return "changes": [] and explain in "reply".
   Do not guess.
 - Return only the JSON. No prose, no code fences."""
 
@@ -552,9 +592,30 @@ def _steps_to_instructions(steps: list) -> str:
     return "\n\n".join(out).strip()
 
 
-def _recipe_for_ai(recipe: Recipe) -> dict:
-    instructions = (recipe.instructions or "").strip() or _steps_to_instructions(recipe.steps or [])
+def _macros_for_ai(macros: "MacrosResponse") -> dict:
+    """Compact nutrition summary so the model reasons from real numbers, not guesses."""
     return {
+        "servings": macros.servings,
+        "per_serving": macros.per_serving.model_dump(),
+        "total": macros.total.model_dump(),
+        "ingredients": [
+            {
+                "name": b.name,
+                "amount": b.amount_display,
+                "calories": b.calories,
+                "protein": b.protein,
+                "carbs": b.carbs,
+                "fat": b.fat,
+                "matched": b.matched,
+            }
+            for b in macros.breakdown
+        ],
+    }
+
+
+def _recipe_for_ai(recipe: Recipe, macros: "MacrosResponse | None" = None) -> dict:
+    instructions = (recipe.instructions or "").strip() or _steps_to_instructions(recipe.steps or [])
+    data = {
         "title": recipe.title,
         "servings": recipe.servings,
         "tags": recipe.tags or [],
@@ -572,6 +633,9 @@ def _recipe_for_ai(recipe: Recipe) -> dict:
             for ing in (recipe.ingredients or [])
         ],
     }
+    if macros is not None:
+        data["macros"] = _macros_for_ai(macros)
+    return data
 
 
 def _build_edit_messages(recipe_json: dict, conversation: list, instruction: str) -> list[dict]:
@@ -585,15 +649,11 @@ def _build_edit_messages(recipe_json: dict, conversation: list, instruction: str
     return messages
 
 
-def _normalize_edit(recipe: Recipe, data: dict) -> AiEditResponse:
-    """Sanitize raw model output: strip forbidden fields, re-key toggles, validate ingredient targets."""
-    reply = str(data.get("reply") or "").strip()
-
-    existing = {str(i.get("id")): i for i in (recipe.ingredients or []) if i.get("id") is not None}
-
-    raw_changes = data.get("changes")
+def _normalize_change_list(
+    recipe: Recipe, existing: dict, raw_changes, counter: int
+) -> tuple[list[Change], int]:
+    """Validate a raw model-proposed change list against the recipe. Returns (changes, next_counter)."""
     changes: list[Change] = []
-    counter = 0
 
     for rc in raw_changes if isinstance(raw_changes, list) else []:
         if not isinstance(rc, dict):
@@ -648,6 +708,44 @@ def _normalize_edit(recipe: Recipe, data: dict) -> AiEditResponse:
             why=str(rc.get("why") or "").strip(),
         ))
 
+    return changes, counter
+
+
+def _normalize_suggestions(
+    recipe: Recipe, existing: dict, raw_suggestions, counter: int
+) -> tuple[list[Suggestion], int]:
+    """Validate model-proposed diagnostic suggestions (e.g. 'cut the calories')."""
+    suggestions: list[Suggestion] = []
+
+    for i, rs in enumerate(raw_suggestions if isinstance(raw_suggestions, list) else [], start=1):
+        if not isinstance(rs, dict):
+            continue
+        title = str(rs.get("title") or "").strip()
+        rationale = str(rs.get("rationale") or "").strip()
+        s_changes, counter = _normalize_change_list(recipe, existing, rs.get("changes"), counter)
+
+        if not title and not rationale and not s_changes:
+            continue  # nothing usable in this suggestion
+
+        suggestions.append(Suggestion(
+            id=f"sug-{i}",
+            title=title or f"Option {i}",
+            rationale=rationale,
+            changes=s_changes,
+        ))
+
+    return suggestions[:4], counter
+
+
+def _normalize_edit(recipe: Recipe, data: dict) -> AiEditResponse:
+    """Sanitize raw model output: strip forbidden fields, re-key toggles, validate ingredient targets."""
+    reply = str(data.get("reply") or "").strip()
+
+    existing = {str(i.get("id")): i for i in (recipe.ingredients or []) if i.get("id") is not None}
+
+    changes, counter = _normalize_change_list(recipe, existing, data.get("changes"), 0)
+    suggestions, _ = _normalize_suggestions(recipe, existing, data.get("suggestions"), counter)
+
     proposed_raw = data.get("proposed")
     proposed_clean = (
         {k: v for k, v in proposed_raw.items() if k in _AI_EDIT_ALLOWED_FIELDS}
@@ -659,7 +757,7 @@ def _normalize_edit(recipe: Recipe, data: dict) -> AiEditResponse:
     except Exception:
         proposed = RecipeUpdate()
 
-    return AiEditResponse(reply=reply, proposed=proposed, changes=changes)
+    return AiEditResponse(reply=reply, proposed=proposed, changes=changes, suggestions=suggestions)
 
 
 @router.post("/{recipe_id}/ai-edit", response_model=AiEditResponse)
@@ -674,7 +772,8 @@ async def ai_edit_recipe(recipe_id: int, payload: AiEditRequest, db: Session = D
     if len(instruction) > 2000:
         raise HTTPException(status_code=422, detail="Instruction is too long (2000 character maximum).")
 
-    messages = _build_edit_messages(_recipe_for_ai(recipe), payload.conversation, instruction)
+    macros = _compute_macros(recipe, db)
+    messages = _build_edit_messages(_recipe_for_ai(recipe, macros), payload.conversation, instruction)
 
     try:
         raw = await AIService()._call(messages, response_format={"type": "json_object"})
@@ -692,12 +791,7 @@ async def ai_edit_recipe(recipe_id: int, payload: AiEditRequest, db: Session = D
     return _normalize_edit(recipe, data)
 
 
-@router.get("/{recipe_id}/macros", response_model=MacrosResponse)
-def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-
+def _compute_macros(recipe: Recipe, db: Session) -> MacrosResponse:
     ingredients = recipe.ingredients or []
     servings = recipe.servings or 1
     total_count = len(ingredients)
@@ -770,6 +864,15 @@ def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
         total_count=total_count,
         breakdown=breakdown,
     )
+
+
+@router.get("/{recipe_id}/macros", response_model=MacrosResponse)
+def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    return _compute_macros(recipe, db)
 
 
 class ShoppingListRequest(BaseModel):

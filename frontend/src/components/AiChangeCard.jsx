@@ -52,7 +52,7 @@ function opLabel(op) {
   return { text: 'Change', cls: 'border-mise-700 text-mise-500' }
 }
 
-export default function AiChangeCard({ changes, busy, resultText, onApply, onDismiss }) {
+export default function AiChangeCard({ title, rationale, changes, busy, resultText, onApply, onDismiss }) {
   const [selected, setSelected] = useState(() => new Set(changes.map((c) => c.id)))
   const locked = Boolean(resultText) || busy
 
@@ -69,6 +69,12 @@ export default function AiChangeCard({ changes, busy, resultText, onApply, onDis
 
   return (
     <div className="mt-2 rounded border border-theme bg-mise-900 p-3">
+      {title && (
+        <div className="mb-2">
+          <p className="text-sm font-medium text-mise-300">{title}</p>
+          {rationale && <p className="mt-0.5 text-[11px] text-mise-500">{rationale}</p>}
+        </div>
+      )}
       <ul className="space-y-2">
         {changes.map((change) => {
           const isSelected = selected.has(change.id)

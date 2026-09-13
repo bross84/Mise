@@ -82,7 +82,15 @@ class Change(BaseModel):
     why: str = ""
 
 
+class Suggestion(BaseModel):
+    id: str
+    title: str
+    rationale: str = ""
+    changes: list[Change] = []
+
+
 class AiEditResponse(BaseModel):
     reply: str
     proposed: RecipeUpdate = RecipeUpdate()
     changes: list[Change] = []
+    suggestions: list[Suggestion] = []

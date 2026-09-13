@@ -9,8 +9,9 @@ const nextId = () => `m${Date.now()}-${(msgSeq += 1)}`
 
 const EXAMPLES = [
   'Halve the salt',
-  'Convert the butter to grams',
   'The instructions mention a skillet that isn’t in the ingredients — add it',
+  'This doesn’t taste quite right — what would you tweak?',
+  'The calories are too high — what could we cut?',
 ]
 
 export default function AiAssistPanel({ recipeId, recipe, open, onClose, onApplied }) {
@@ -42,13 +43,18 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
     setSending(true)
     try {
       const res = await aiEditRecipe(recipeId, instruction, priorConversation)
+      const changes = res.changes ?? []
+      const suggestions = res.suggestions ?? []
       setMessages((m) => [
         ...m,
         {
           id: nextId(),
           role: 'assistant',
-          content: res.reply || (res.changes?.length ? 'Proposed changes:' : 'No changes proposed.'),
-          changes: res.changes ?? [],
+          content:
+            res.reply || (changes.length || suggestions.length ? 'Proposed changes:' : 'No changes proposed.'),
+          changes,
+          suggestions,
+          suggestionStatus: {},
         },
       ])
     } catch (err) {
@@ -105,6 +111,39 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
     )
   }
 
+  const setSuggestionStatus = (msgId, suggestionId, status) => {
+    setMessages((m) =>
+      m.map((x) =>
+        x.id === msgId
+          ? { ...x, suggestionStatus: { ...x.suggestionStatus, [suggestionId]: status } }
+          : x,
+      ),
+    )
+  }
+
+  const applySuggestion = async (msgId, suggestionId, accepted) => {
+    if (!accepted.length) return
+    setSuggestionStatus(msgId, suggestionId, { busy: true })
+    try {
+      const { payload } = buildUpdatePayload(recipe, accepted)
+      const updated = await updateRecipe(recipeId, payload)
+      onApplied?.(updated)
+      setSuggestionStatus(msgId, suggestionId, {
+        busy: false,
+        resultText: `Applied ${accepted.length} change${accepted.length === 1 ? '' : 's'}.`,
+      })
+    } catch (err) {
+      setSuggestionStatus(msgId, suggestionId, {
+        busy: false,
+        resultText: `Couldn’t apply: ${err instanceof Error ? err.message : 'request failed'}`,
+      })
+    }
+  }
+
+  const dismissSuggestion = (msgId, suggestionId) => {
+    setSuggestionStatus(msgId, suggestionId, { resultText: 'Dismissed.' })
+  }
+
   return (
     <>
       {open && (
@@ -139,7 +178,10 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
           {messages.length === 0 && (
             <div className="text-sm text-mise-500">
-              <p>Describe an adjustment or a correction. The assistant proposes changes; you accept or decline each one.</p>
+              <p>
+                Describe a change, or ask what to tweak — for taste, calories, or anything else. The assistant
+                proposes changes; you accept or decline each one.
+              </p>
               <ul className="mt-3 space-y-1.5">
                 {EXAMPLES.map((ex) => (
                   <li key={ex}>
@@ -186,6 +228,27 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
               {m.role === 'assistant' && m.resultText && !m.changes?.length && (
                 <p className="mt-1 text-xs text-mise-500">{m.resultText}</p>
               )}
+              {m.role === 'assistant' &&
+                !m.error &&
+                m.suggestions?.map((s) =>
+                  s.changes?.length > 0 ? (
+                    <AiChangeCard
+                      key={s.id}
+                      title={s.title}
+                      rationale={s.rationale}
+                      changes={s.changes}
+                      busy={Boolean(m.suggestionStatus?.[s.id]?.busy)}
+                      resultText={m.suggestionStatus?.[s.id]?.resultText}
+                      onApply={(accepted) => applySuggestion(m.id, s.id, accepted)}
+                      onDismiss={() => dismissSuggestion(m.id, s.id)}
+                    />
+                  ) : (
+                    <div key={s.id} className="mt-2 rounded border border-theme bg-mise-900 p-3">
+                      <p className="text-sm font-medium text-mise-300">{s.title}</p>
+                      {s.rationale && <p className="mt-0.5 text-[11px] text-mise-500">{s.rationale}</p>}
+                    </div>
+                  ),
+                )}
             </div>
           ))}
 
