@@ -692,6 +692,17 @@ def _normalize_change_list(
                     current = existing[target_id]
                     if after and all(current.get(k) == v for k, v in after.items()):
                         continue  # no-op
+                    # A renamed ingredient that leaves ingredient_id untouched keeps the
+                    # old DB link, so the UI displays the linked ingredient's canonical
+                    # name instead of the new one and the change looks like it never
+                    # applied. The model is told to null ingredient_id on a real
+                    # substitution, but a minimal "only changed keys" diff easily omits
+                    # it — so treat an unaddressed name change as breaking the link.
+                    if "name" in after and "ingredient_id" not in after:
+                        old_name = str(current.get("name") or "").strip().lower()
+                        new_name = str(after.get("name") or "").strip().lower()
+                        if old_name != new_name:
+                            after = {**after, "ingredient_id": None}
             else:  # add
                 if not isinstance(after, dict) or not str(after.get("name") or "").strip():
                     continue
