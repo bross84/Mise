@@ -10,7 +10,7 @@ const nextId = () => `m${Date.now()}-${(msgSeq += 1)}`
 const EXAMPLES = [
   'Halve the salt',
   'The instructions mention a skillet that isn’t in the ingredients — add it',
-  'This doesn’t taste quite right — what would you tweak?',
+  'Look this over and suggest how to make it better',
   'The calories are too high — what could we cut?',
 ]
 
