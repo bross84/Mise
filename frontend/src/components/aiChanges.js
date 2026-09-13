@@ -40,9 +40,25 @@ export function applyChanges(recipe, accepted) {
           ing.id === change.target_id ? { ...ing, ...(change.after || {}) } : ing,
         )
       } else if (change.op === 'add' && change.after) {
+        const newIng = { ...change.after, id: change.after.id || tempIngredientId() }
+        const groupName = (newIng.group_name || '').trim() || null
+        // Groups are rendered as runs of consecutive same-named ingredients, so a
+        // grouped add belongs right after that group's last existing item — appending
+        // to the absolute end would start a disconnected second section with the same
+        // name if anything else comes after it in the list.
+        let insertAt = next.ingredients.length
+        if (groupName) {
+          for (let i = next.ingredients.length - 1; i >= 0; i -= 1) {
+            if (((next.ingredients[i].group_name || '').trim() || null) === groupName) {
+              insertAt = i + 1
+              break
+            }
+          }
+        }
         next.ingredients = [
-          ...next.ingredients,
-          { ...change.after, id: change.after.id || tempIngredientId() },
+          ...next.ingredients.slice(0, insertAt),
+          newIng,
+          ...next.ingredients.slice(insertAt),
         ]
       } else if (change.op === 'remove' && change.target_id) {
         next.ingredients = next.ingredients.filter((ing) => ing.id !== change.target_id)
