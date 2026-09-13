@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { CalendarCheck, CalendarPlus, ChefHat, Download, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, ChefHat, ChevronDown, ChevronUp, Download, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import AiAssistPanel from '../components/AiAssistPanel.jsx'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
@@ -1101,6 +1101,28 @@ function RecipeDetail() {
     }))
   }
 
+  // Moves an ingredient one row up/down (direction -1 or 1). Swapping past a row from a
+  // different section adopts that section's group_name — otherwise crossing a boundary
+  // would strand the moved row in a second, disconnected run of its old section (the same
+  // display bug as an AI-added ingredient landing in the wrong spot).
+  const moveDraftIngredient = (index, direction) => {
+    setDraft((current) => {
+      const rows = [...current.ingredients]
+      const targetIndex = index + direction
+      if (targetIndex < 0 || targetIndex >= rows.length) return current
+
+      const moved = rows[index]
+      const other = rows[targetIndex]
+      const movedGroup = (moved.group_name || '') || null
+      const otherGroup = (other.group_name || '') || null
+
+      rows[index] = other
+      rows[targetIndex] = movedGroup === otherGroup ? moved : { ...moved, group_name: otherGroup }
+
+      return { ...current, ingredients: rows }
+    })
+  }
+
   // Rename a section: applies to the row at startIndex and every contiguous row below it
   // that shares the same original group_name. Keeps the raw string while typing (spaces
   // and all); handleSaveEdit and groupIngredients normalize blank -> null.
@@ -1643,7 +1665,7 @@ function RecipeDetail() {
                     onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
                     onFocus={() => setOpenIngredientSearchId(ing.id)}
                     placeholder="Name"
-                    className={`${inputCls} col-span-5`}
+                    className={`${inputCls} col-span-4`}
                   />
                   <label htmlFor={`edit-ing-amount-${ing.id}`} className="sr-only">Amount</label>
                   <input
@@ -1663,22 +1685,42 @@ function RecipeDetail() {
                     placeholder="Unit"
                     className={`${inputCls} col-span-3`}
                   />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraft((current) => ({
-                        ...current,
-                        ingredients:
-                          current.ingredients.length === 1
-                            ? current.ingredients
-                            : current.ingredients.filter((i) => i.id !== ing.id),
-                      }))
-                    }
-                    aria-label={`Remove ingredient ${index + 1}`}
-                    className="col-span-1 flex items-center justify-center text-rose-400 transition hover:text-rose-300 focus-visible:outline-none"
-                  >
-                    <X size={15} />
-                  </button>
+                  <div className="col-span-2 flex items-center justify-end gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => moveDraftIngredient(index, -1)}
+                      disabled={index === 0}
+                      aria-label={`Move ingredient ${index + 1} up`}
+                      className="flex items-center justify-center p-1 text-mise-500 transition hover:text-mise-300 disabled:opacity-30 disabled:hover:text-mise-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                    >
+                      <ChevronUp size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveDraftIngredient(index, 1)}
+                      disabled={index === draft.ingredients.length - 1}
+                      aria-label={`Move ingredient ${index + 1} down`}
+                      className="flex items-center justify-center p-1 text-mise-500 transition hover:text-mise-300 disabled:opacity-30 disabled:hover:text-mise-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                    >
+                      <ChevronDown size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          ingredients:
+                            current.ingredients.length === 1
+                              ? current.ingredients
+                              : current.ingredients.filter((i) => i.id !== ing.id),
+                        }))
+                      }
+                      aria-label={`Remove ingredient ${index + 1}`}
+                      className="flex items-center justify-center p-1 text-rose-400 transition hover:text-rose-300 focus-visible:outline-none"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
                   {openIngredientSearchId === ing.id && (
                     <div className="col-span-12 mt-2">
                       <IngredientSearchPanel
