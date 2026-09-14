@@ -9,7 +9,9 @@ from app.services.ai import DEFAULT_BASE_URL, DEFAULT_MODEL
 
 router = APIRouter(prefix='/api/settings', tags=['settings'])
 
-ENV_FILE = Path(__file__).resolve().parents[1] / '.env'
+# Must live in the mise_data volume (same place as mise.db) — anywhere else gets wiped
+# every time the backend image is rebuilt and the container is recreated.
+ENV_FILE = Path('/app/data/ai_settings.env')
 
 
 def _upsert_env_vars(values: dict[str, str]) -> None:

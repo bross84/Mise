@@ -13,14 +13,16 @@ from sqlalchemy.orm import Session
 from app.database import create_tables, engine, get_db
 from app.models.recipe import Recipe
 from app.routers import recipes, ingredients, settings, share, meal_plan
+from app.routers.settings import ENV_FILE as AI_SETTINGS_ENV_FILE
 from app.services.ai import AIService
 import app.models  # noqa: F401 — ensures models are registered before create_all
 
-# Load environment variables from the project root first, then backend/app/.env.
+# Load environment variables from the project root first, then the persisted AI settings
+# file (mise_data volume — survives redeploys, unlike anything in the container's own
+# writable layer).
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_ENV_FILE = Path(__file__).resolve().parent / '.env'
 load_dotenv(PROJECT_ROOT / '.env')
-load_dotenv(APP_ENV_FILE)
+load_dotenv(AI_SETTINGS_ENV_FILE)
 
 app = FastAPI(title="Mise API")
 
