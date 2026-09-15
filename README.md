@@ -112,7 +112,7 @@ Copy `.env.example` to `.env` in the project root (git-ignored) and fill in:
 
 Open Food Facts search and barcode lookup need no key.
 
-The API key, model, and base URL can also be set from the app's **Settings** page, which writes them to `backend/app/.env`.
+The API key, model, and base URL can also be set from the app's **Settings** page, which persists them to `/app/data/ai_settings.env` (the `mise_data` volume), so they survive container redeploys.
 
 ### Frontend
 
