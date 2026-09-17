@@ -3,6 +3,7 @@ import { Sparkles, X } from 'lucide-react'
 import { aiEditRecipe, updateRecipe } from '../api/client.js'
 import { buildUpdatePayload } from './aiChanges.js'
 import AiChangeCard from './AiChangeCard.jsx'
+import { MarkdownText } from './MarkdownText.jsx'
 
 let msgSeq = 0
 const nextId = () => `m${Date.now()}-${(msgSeq += 1)}`
@@ -210,7 +211,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
                         : 'border-theme bg-mise-900 text-mise-400'
                   }`}
                 >
-                  {m.content}
+                  {m.role === 'assistant' && !m.error ? <MarkdownText text={m.content} /> : m.content}
                   {m.error && m.content.toLowerCase().includes('key') && (
                     <span className="mt-1 block text-xs text-mise-500">Add one on the Settings page.</span>
                   )}
