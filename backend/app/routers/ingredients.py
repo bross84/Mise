@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 import httpx
@@ -8,16 +9,19 @@ from app.database import get_db
 from app.models.ingredient import Ingredient
 from app.models.blocked_ingredient import BlockedIngredient
 from app.schemas.ingredient import IngredientCreate, IngredientUpdate, IngredientResponse
+from app.services import nutrition
 
 router = APIRouter(prefix="/api/ingredients", tags=["ingredients"])
 
 
 class SearchResult(BaseModel):
+    """One search hit. Macros are always per 100 g; they are None when the source did not
+    provide one complete set (see `incomplete_reason`) and the food needs manual entry."""
     name: str
-    calories: float
-    protein: float
-    carbs: float
-    fat: float
+    calories: float | None = None
+    protein: float | None = None
+    carbs: float | None = None
+    fat: float | None = None
     unit: str = "per 100g"
     source: str
     serving_grams: float | None = None
@@ -25,6 +29,9 @@ class SearchResult(BaseModel):
     ingredient_id: int | None = None
     source_url: str | None = None
     source_id: str | None = None
+    nutrition_complete: bool = True
+    incomplete_reason: str | None = None
+    converted_from_serving: bool = False
 
 
 class BlockRequest(BaseModel):
@@ -52,11 +59,32 @@ def _round(value: float | None) -> float:
     return round(float(value), 1)
 
 
+# USDA portions like "1 cup" or "1 tbsp" describe volume, not a countable piece, so they must
+# not become the serving weight.
+_VOLUME_PORTION_RE = re.compile(
+    r"\b(cups?|tbsp|tablespoons?|tsp|teaspoons?|fl\.? ?oz|fluid|ml|milliliters?|liters?|litres?|quarts?|pints?|gallons?)\b",
+    re.IGNORECASE,
+)
+
+
 def _usda_serving_grams(food: dict) -> float | None:
+    size = nutrition.parse_number(food.get("servingSize"))
+    unit = str(food.get("servingSizeUnit") or "").strip().lower()
+    if size and unit in ("g", "grm", "gram", "grams"):
+        return round(size, 1)
     for portion in (food.get("foodPortions") or []):
-        grams = portion.get("gramWeight")
-        if grams:
-            return round(float(grams), 1)
+        grams = nutrition.parse_number(portion.get("gramWeight"))
+        if not grams:
+            continue
+        measure = portion.get("measureUnit")
+        label = " ".join([
+            str(portion.get("portionDescription") or ""),
+            str(portion.get("modifier") or ""),
+            str(measure.get("name") or "") if isinstance(measure, dict) else "",
+        ])
+        if _VOLUME_PORTION_RE.search(label):
+            continue
+        return round(grams, 1)
     return None
 
 
@@ -97,23 +125,90 @@ def _off_serving_grams(product: dict) -> float | None:
     return None
 
 
+def _macro_fields(selection: "nutrition.MacroSelection") -> dict:
+    if selection.macros is None:
+        return {
+            "calories": None, "protein": None, "carbs": None, "fat": None,
+            "nutrition_complete": False, "incomplete_reason": selection.reason,
+        }
+    return {**selection.macros, "nutrition_complete": True, "converted_from_serving": selection.converted_from_serving}
+
+
+_USDA_ENERGY_NAMES = ("Energy", "Energy (Atwater General Factors)", "Energy (Atwater Specific Factors)")
+_USDA_NUTRIENT_NAMES = {
+    "protein": ("Protein",),
+    "carbs": ("Carbohydrate, by difference", "Carbohydrate, by summation"),
+    "fat": ("Total lipid (fat)", "Total fat (NLEA)"),
+}
+
+
+def _usda_per_100g(food: dict) -> dict:
+    """USDA foodNutrients are per 100 g. A missing nutrient stays None (it is not 0)."""
+    entries = [n for n in (food.get("foodNutrients") or []) if isinstance(n, dict)]
+
+    def lookup(names: tuple[str, ...], unit: str | None = None) -> float | None:
+        for name in names:
+            for entry in entries:
+                if entry.get("nutrientName") != name:
+                    continue
+                if unit and str(entry.get("unitName") or "").upper() != unit:
+                    continue
+                value = nutrition.parse_number(entry.get("value"))
+                if value is not None:
+                    return value
+        return None
+
+    calories = lookup(_USDA_ENERGY_NAMES, "KCAL")
+    if calories is None:
+        kilojoules = lookup(_USDA_ENERGY_NAMES, "KJ")
+        calories = kilojoules / 4.184 if kilojoules is not None else None
+    return {"calories": calories, **{key: lookup(names) for key, names in _USDA_NUTRIENT_NAMES.items()}}
+
+
+def _usda_per_serving(food: dict) -> dict:
+    """Branded foods may list label (per-serving) values under labelNutrients."""
+    label = food.get("labelNutrients") or {}
+
+    def value(key: str) -> float | None:
+        entry = label.get(key)
+        return nutrition.parse_number(entry.get("value")) if isinstance(entry, dict) else None
+
+    return {"calories": value("calories"), "protein": value("protein"), "carbs": value("carbohydrates"), "fat": value("fat")}
+
+
 def _parse_usda(data: dict) -> list[SearchResult]:
     results = []
     for food in (data.get("foods") or [])[:15]:
-        nutrients = {n["nutrientName"]: n.get("value", 0) for n in (food.get("foodNutrients") or [])}
         fdc_id = str(food.get("fdcId") or "")
+        serving_grams = _usda_serving_grams(food)
+        selection = nutrition.pick_macro_set(_usda_per_100g(food), _usda_per_serving(food), serving_grams)
         results.append(SearchResult(
             name=food.get("description", "Unknown"),
-            calories=_round(nutrients.get("Energy") or nutrients.get("Energy (Atwater General Factors)")),
-            protein=_round(nutrients.get("Protein")),
-            carbs=_round(nutrients.get("Carbohydrate, by difference")),
-            fat=_round(nutrients.get("Total lipid (fat)")),
+            **_macro_fields(selection),
             source="usda",
-            serving_grams=_usda_serving_grams(food),
+            serving_grams=serving_grams,
             source_id=fdc_id or None,
             source_url=f"https://fdc.nal.usda.gov/food-details/{fdc_id}/nutrients" if fdc_id else None,
         ))
     return results
+
+
+def _off_energy_kcal(nutriments: dict, suffix: str) -> float | None:
+    kilocalories = nutrition.parse_number(nutriments.get(f"energy-kcal_{suffix}"))
+    if kilocalories is not None:
+        return kilocalories
+    kilojoules = nutrition.parse_number(nutriments.get(f"energy_{suffix}"))
+    return kilojoules / 4.184 if kilojoules is not None else None
+
+
+def _off_macro_set(nutriments: dict, suffix: str) -> dict:
+    """suffix is "100g" or "serving"; every value in the set is for that same basis."""
+    return {
+        "calories": _off_energy_kcal(nutriments, suffix),
+        "protein": nutrition.parse_number(nutriments.get(f"proteins_{suffix}")),
+        "carbs": nutrition.parse_number(nutriments.get(f"carbohydrates_{suffix}")),
+        "fat": nutrition.parse_number(nutriments.get(f"fat_{suffix}")),
+    }
 
 
 def _parse_off(data: dict) -> list[SearchResult]:
@@ -124,48 +219,14 @@ def _parse_off(data: dict) -> list[SearchResult]:
         if not name.strip():
             continue
         serving_grams = _off_serving_grams(product)
-
-        calories_serving = nutriments.get("energy-kcal_serving")
-        protein_serving = nutriments.get("proteins_serving")
-        carbs_serving = nutriments.get("carbohydrates_serving")
-        fat_serving = nutriments.get("fat_serving")
-        has_serving_macros = any(v is not None for v in [calories_serving, protein_serving, carbs_serving, fat_serving])
-
-        calories_100g = nutriments.get("energy-kcal_100g")
-        if calories_100g is None and nutriments.get("energy_100g") is not None:
-            calories_100g = nutriments.get("energy_100g") / 4.184
-        protein_100g = nutriments.get("proteins_100g")
-        carbs_100g = nutriments.get("carbohydrates_100g")
-        fat_100g = nutriments.get("fat_100g")
-
-        if has_serving_macros:
-            calories = calories_serving
-            protein = protein_serving
-            carbs = carbs_serving
-            fat = fat_serving
-            unit = f"per {serving_grams}g" if serving_grams else "per 100g"
-        elif serving_grams:
-            factor = serving_grams / 100.0
-            calories = (float(calories_100g) if calories_100g is not None else 0.0) * factor
-            protein = (float(protein_100g) if protein_100g is not None else 0.0) * factor
-            carbs = (float(carbs_100g) if carbs_100g is not None else 0.0) * factor
-            fat = (float(fat_100g) if fat_100g is not None else 0.0) * factor
-            unit = f"per {serving_grams}g"
-        else:
-            calories = calories_100g
-            protein = protein_100g
-            carbs = carbs_100g
-            fat = fat_100g
-            unit = "per 100g"
+        selection = nutrition.pick_macro_set(
+            _off_macro_set(nutriments, "100g"), _off_macro_set(nutriments, "serving"), serving_grams,
+        )
 
         barcode = str(product.get("code") or "").strip() or None
         results.append(SearchResult(
             name=name.strip(),
-            calories=_round(calories),
-            protein=_round(protein),
-            carbs=_round(carbs),
-            fat=_round(fat),
-            unit=unit,
+            **_macro_fields(selection),
             source="openfoodfacts",
             serving_grams=serving_grams,
             barcode=barcode,
@@ -243,6 +304,7 @@ async def search_ingredients(
                     unit=row.unit,
                     source="local",
                     barcode=row.barcode,
+                    serving_grams=row.serving_grams,
                     ingredient_id=row.id,
                 )
                 for row in local_rows
@@ -331,6 +393,77 @@ def unblock_ingredient(blocked_id: int, db: Session = Depends(get_db)):
     return {"deleted": True}
 
 
+class AuditItem(BaseModel):
+    id: int
+    name: str
+    source: str | None = None
+    unit: str | None = None
+    calories: float
+    protein: float
+    carbs: float
+    fat: float
+    serving_grams: float | None = None
+    serving_quantity: int | None = None
+    expected_calories: float | None = None
+    delta_pct: float | None = None
+
+
+class AuditResponse(BaseModel):
+    tolerance: float
+    total: int
+    calorie_mismatch: list[AuditItem]
+    non_standard_basis: list[AuditItem]
+    missing_serving_weight: list[AuditItem]
+
+
+def _audit_item(row: Ingredient, **extra) -> AuditItem:
+    return AuditItem(
+        id=row.id, name=row.name, source=row.source, unit=row.unit,
+        calories=row.calories, protein=row.protein, carbs=row.carbs, fat=row.fat,
+        serving_grams=row.serving_grams, serving_quantity=row.serving_quantity, **extra,
+    )
+
+
+@router.get("/audit", response_model=AuditResponse)
+def audit_ingredients(
+    tolerance: float = Query(default=nutrition.CALORIE_TOLERANCE, ge=0, le=1),
+    db: Session = Depends(get_db),
+):
+    """Foods to review. Read-only: nothing is changed.
+
+    - calorie_mismatch: calories are not within `tolerance` of 4*protein + 4*carbs + 9*fat.
+      Worst offenders first.
+    - non_standard_basis: `unit` is not "per 100g", so the macros may be for a serving or
+      another amount. The calorie check cannot see this, because the numbers can still agree
+      with each other.
+    - missing_serving_weight: pieces per serving is above 1 but no serving weight is known,
+      so amounts in pieces cannot be converted.
+    """
+    rows = db.query(Ingredient).order_by(Ingredient.name.asc()).all()
+    mismatched: list[tuple[float, AuditItem]] = []
+    non_standard: list[AuditItem] = []
+    missing_weight: list[AuditItem] = []
+
+    for row in rows:
+        check = nutrition.check_calories(row.calories, row.protein, row.carbs, row.fat, tolerance)
+        if not check.ok:
+            severity = abs(check.delta_pct) if check.delta_pct is not None else float("inf")
+            mismatched.append((severity, _audit_item(row, expected_calories=check.expected, delta_pct=check.delta_pct)))
+        if not nutrition.is_standard_unit(row.unit):
+            non_standard.append(_audit_item(row))
+        if (row.serving_quantity or 1) > 1 and nutrition.serving_weight(row.unit, row.serving_grams) is None:
+            missing_weight.append(_audit_item(row))
+
+    mismatched.sort(key=lambda pair: pair[0], reverse=True)
+    return AuditResponse(
+        tolerance=tolerance,
+        total=len(rows),
+        calorie_mismatch=[item for _, item in mismatched],
+        non_standard_basis=non_standard,
+        missing_serving_weight=missing_weight,
+    )
+
+
 @router.get("", response_model=list[IngredientResponse])
 def list_ingredients(db: Session = Depends(get_db)):
     return db.query(Ingredient).order_by(Ingredient.name.asc()).all()
@@ -344,6 +477,31 @@ def get_ingredient(ingredient_id: int, db: Session = Depends(get_db)):
     return ingredient
 
 
+def _calorie_mismatch_409(values: dict) -> HTTPException:
+    check = nutrition.check_calories(values["calories"], values["protein"], values["carbs"], values["fat"])
+    if check.expected > 0:
+        message = (
+            f"Calories don't match the macros: {values['calories']:g} kcal entered, but "
+            f"4\u00d7protein + 4\u00d7carbs + 9\u00d7fat = {check.expected:g} kcal "
+            f"({check.delta_pct:+.0f}%)."
+        )
+    else:
+        message = f"Calories are {values['calories']:g} kcal but the protein, carbs and fat add up to 0 kcal."
+    return HTTPException(status_code=409, detail={
+        "code": "calorie_mismatch",
+        "message": message,
+        "calories": values["calories"],
+        "expected_calories": check.expected,
+        "delta_pct": check.delta_pct,
+    })
+
+
+def _convert_per_serving(values: dict, serving_grams: float | None) -> dict:
+    if not serving_grams or serving_grams <= 0:
+        raise HTTPException(status_code=422, detail="Serving weight (g) is required when values are per serving.")
+    return {**values, **nutrition.per_serving_to_per_100g(values, serving_grams), "serving_grams": serving_grams}
+
+
 @router.post("", response_model=IngredientResponse, status_code=201)
 def create_ingredient(data: IngredientCreate, db: Session = Depends(get_db)):
     existing = db.query(Ingredient).filter(Ingredient.name.ilike(data.name)).first()
@@ -354,7 +512,22 @@ def create_ingredient(data: IngredientCreate, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(existing)
         return existing
-    ingredient = Ingredient(**data.model_dump())
+
+    values = data.model_dump(exclude={"nutrition_basis", "override_calorie_check"})
+    if data.nutrition_basis == "per_serving":
+        values = _convert_per_serving(values, data.serving_grams)
+    # Everything is stored per 100 g, whatever basis it arrived in.
+    values["unit"] = nutrition.STANDARD_UNIT
+    values["serving_quantity"] = max(int(values.get("serving_quantity") or 1), 1)
+    if values.get("serving_grams") is not None and values["serving_grams"] <= 0:
+        values["serving_grams"] = None
+
+    if not data.override_calorie_check and not nutrition.check_calories(
+        values["calories"], values["protein"], values["carbs"], values["fat"],
+    ).ok:
+        raise _calorie_mismatch_409(values)
+
+    ingredient = Ingredient(**values)
     db.add(ingredient)
     db.commit()
     db.refresh(ingredient)
@@ -366,7 +539,32 @@ def update_ingredient(ingredient_id: int, data: IngredientUpdate, db: Session = 
     ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
-    for field, value in data.model_dump(exclude_unset=True).items():
+
+    changes = data.model_dump(exclude_unset=True)
+    basis = changes.pop("nutrition_basis", None)
+    override = changes.pop("override_calorie_check", False)
+
+    if basis == "per_serving":
+        supplied = {key: changes.get(key) for key in nutrition.MACRO_KEYS}
+        if any(value is None for value in supplied.values()):
+            raise HTTPException(status_code=422, detail="Calories, protein, carbs and fat are all required for per-serving values.")
+        changes.update(_convert_per_serving(supplied, changes.get("serving_grams", ingredient.serving_grams)))
+    if basis is not None:
+        # The macros in this request were declared per 100 g (or were just converted to it).
+        changes["unit"] = nutrition.STANDARD_UNIT
+    if "serving_quantity" in changes:
+        changes["serving_quantity"] = max(int(changes["serving_quantity"] or 1), 1)
+    if changes.get("serving_grams") is not None and changes["serving_grams"] <= 0:
+        changes["serving_grams"] = None
+
+    # Only re-check when the macros are being edited, so renaming a food that already fails
+    # the check is never blocked.
+    if not override and any(key in changes for key in nutrition.MACRO_KEYS):
+        merged = {key: changes.get(key, getattr(ingredient, key)) for key in nutrition.MACRO_KEYS}
+        if not nutrition.check_calories(**merged).ok:
+            raise _calorie_mismatch_409(merged)
+
+    for field, value in changes.items():
         setattr(ingredient, field, value)
     db.commit()
     db.refresh(ingredient)

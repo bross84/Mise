@@ -1252,7 +1252,7 @@ function RecipeDetail() {
                     </button>
                   </div>
                 )}
-                <div className={`grid grid-cols-12 gap-2 rounded border border-theme bg-mise-950/50 p-3 ${isUnlinked(ing) ? 'border-l-2 !border-l-ember' : ''}`}>
+                <div className={`grid grid-cols-12 items-start gap-2 rounded border border-theme bg-mise-950/50 p-3 ${isUnlinked(ing) ? 'border-l-2 !border-l-ember' : ''}`}>
                   <label htmlFor={`edit-ing-name-${ing.id}`} className="sr-only">Ingredient {index + 1} name</label>
                   <div className="col-span-4">
                     <input
@@ -1264,9 +1264,7 @@ function RecipeDetail() {
                       placeholder="Name"
                       className={`${inputCls} w-full`}
                     />
-                    {ing.ingredient_id ? (
-                      <p className="mt-1 text-[11px] text-mise-500">Linked</p>
-                    ) : ing.name.trim() ? (
+                    {isUnlinked(ing) ? (
                       <p className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-mise-400">
                         Not linked
                         <button
@@ -1298,7 +1296,7 @@ function RecipeDetail() {
                     placeholder="Unit"
                     className={`${inputCls} col-span-3`}
                   />
-                  <div className="col-span-2 flex items-center justify-end gap-0.5">
+                  <div className="col-span-2 flex h-[38px] items-center justify-end gap-0.5">
                     <button
                       type="button"
                       onClick={() => moveDraftIngredient(index, -1)}
@@ -1454,7 +1452,7 @@ function RecipeDetail() {
                               const macroLine = bd
                                 ? bd.matched
                                   ? `Cal: ${Math.round(bd.calories)}  P: ${Math.round(bd.protein)}g  F: ${Math.round(bd.fat)}g  C: ${Math.round(bd.carbs)}g`
-                                  : '—'
+                                  : (bd.note ?? '—')
                                 : null
                               return (
                                 <li

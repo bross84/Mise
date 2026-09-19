@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.ingredient import Ingredient
 from app.models.recipe import Recipe
-from app.routers.recipes import _to_grams, _reference_grams
+from app.services.nutrition import macro_factor
 
 router = APIRouter(prefix="/share", tags=["share"])
 
@@ -35,12 +35,10 @@ def _compute_macros(recipe: Recipe, db: Session) -> dict | None:
             continue
 
         amount = float(amount_raw)
-        grams = _to_grams(amount, unit_raw, getattr(db_ing, "serving_grams", None), ing_name)
-        if grams is None or grams <= 0:
+        factor, _ = macro_factor(db_ing, amount, unit_raw, ing_name)
+        if factor is None:
             continue
 
-        ref_g = _reference_grams(db_ing)
-        factor = grams / ref_g
         totals["calories"] += db_ing.calories * factor
         totals["protein"] += db_ing.protein * factor
         totals["carbs"] += db_ing.carbs * factor

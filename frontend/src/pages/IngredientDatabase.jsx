@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createIngredient, deleteIngredient, getIngredients, updateIngredient } from '../api/client.js'
+import { createIngredient, deleteIngredient, getIngredientAudit, getIngredients, updateIngredient } from '../api/client.js'
+import NutritionFields, { CalorieMismatchNotice } from '../components/NutritionFields.jsx'
+import {
+  emptyNutritionForm,
+  isCalorieMismatch,
+  isNutritionFormComplete,
+  isStandardUnit,
+  nutritionFormFromIngredient,
+  nutritionFormToPayload,
+} from '../utils/nutrition.js'
 
 const secondaryButtonClassName =
   'rounded border border-mise-800 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
@@ -11,6 +20,13 @@ const fieldCls =
   'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
 
+
+// Lists returned by GET /ingredients/audit, as filters for the table.
+const REVIEW_FILTERS = [
+  { key: 'calorie_mismatch', label: 'fail the calorie check' },
+  { key: 'non_standard_basis', label: 'not saved per 100 g' },
+  { key: 'missing_serving_weight', label: 'missing serving weight' },
+]
 
 function IngredientDatabase() {
   const [query, setQuery] = useState('')
@@ -28,6 +44,13 @@ function IngredientDatabase() {
   // Macro details expansion state — only one row expanded at a time
   const [expandedId, setExpandedId] = useState(null)
 
+  // Calorie-check warnings from the server; the save can be repeated with the override.
+  const [draftWarning, setDraftWarning] = useState(null)
+  const [editWarning, setEditWarning] = useState(null)
+
+  const [audit, setAudit] = useState(null)
+  const [reviewFilter, setReviewFilter] = useState(null)
+
   const [ingredients, setIngredients] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -43,6 +66,7 @@ function IngredientDatabase() {
         setLoadError('')
         const data = await getIngredients()
         if (active) setIngredients(Array.isArray(data) ? data : [])
+        getIngredientAudit().then((d) => { if (active) setAudit(d) }).catch(() => {})
       } catch (err) {
         if (active) {
           setLoadError(err instanceof Error ? err.message : 'Failed to load ingredients.')
@@ -59,59 +83,93 @@ function IngredientDatabase() {
   const reloadIngredients = async () => {
     const data = await getIngredients()
     setIngredients(Array.isArray(data) ? data : [])
+    getIngredientAudit().then(setAudit).catch(() => {})
   }
+
+  // Why each flagged food needs review, keyed by ingredient id
+  const reviewFlags = useMemo(() => {
+    const flags = {}
+    const add = (id, text) => { (flags[id] = flags[id] || []).push(text) }
+    audit?.calorie_mismatch.forEach((i) => add(
+      i.id,
+      i.expected_calories > 0
+        ? `Calories are ${Math.abs(i.delta_pct)}% ${i.delta_pct > 0 ? 'above' : 'below'} what the macros add up to (${i.expected_calories} cal).`
+        : `Calories are ${i.calories} but the macros add up to 0.`,
+    ))
+    audit?.non_standard_basis.forEach((i) => add(i.id, `Saved as “${i.unit}” instead of per 100 g.`))
+    audit?.missing_serving_weight.forEach((i) => add(i.id, `${i.serving_quantity} pieces per serving, but no serving weight.`))
+    return flags
+  }, [audit])
+
+  // A filter that no longer matches anything (after fixing the last one) switches itself off
+  const activeFilter = reviewFilter && audit?.[reviewFilter]?.length > 0 ? reviewFilter : null
 
   // Local table filter — runs against the saved list, not API results
   const filteredIngredients = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return ingredients
-    return ingredients.filter((i) => i.name.toLowerCase().includes(q))
-  }, [ingredients, query])
+    const reviewIds = activeFilter ? new Set(audit[activeFilter].map((i) => i.id)) : null
+    return ingredients.filter((i) => (!reviewIds || reviewIds.has(i.id)) && (!q || i.name.toLowerCase().includes(q)))
+  }, [ingredients, query, activeFilter, audit])
 
   useEffect(() => () => { clearTimeout(timerRef.current) }, [])
 
+  const updateDraft = (next) => {
+    setDraftWarning(null)
+    setDraft(next)
+  }
+
+  const updateEditDraft = (next) => {
+    setEditWarning(null)
+    setEditDraft(next)
+  }
+
   const handleAddManually = () => {
-    setDraft({ name: query.trim(), calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g' })
+    setDraftWarning(null)
+    setDraft({ name: query.trim(), ...emptyNutritionForm })
   }
 
   const handleClearDraft = () => {
     setDraft(null)
+    setDraftWarning(null)
     setQuery('')
     setActionError('')
   }
 
-  const handleSave = async (e) => {
-    e.preventDefault()
+  const saveDraft = async (override = false) => {
     setActionError('')
     setSubmitting(true)
     try {
       await createIngredient({
         name: draft.name.trim(),
-        calories: Number(draft.calories) || 0,
-        protein: Number(draft.protein) || 0,
-        carbs: Number(draft.carbs) || 0,
-        fat: Number(draft.fat) || 0,
-        unit: draft.unit?.trim() || 'per 100g',
+        ...nutritionFormToPayload(draft),
+        source: 'local',
+        override_calorie_check: override,
       })
       handleClearDraft()
       await reloadIngredients()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to save ingredient.')
+      if (isCalorieMismatch(err)) {
+        setDraftWarning(err.detail)
+      } else {
+        setActionError(err instanceof Error ? err.message : 'Failed to save ingredient.')
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
+  const handleSave = (e) => {
+    e.preventDefault()
+    void saveDraft(false)
+  }
+
   const handleStartEdit = (ingredient) => {
     setEditingId(ingredient.id)
+    setEditWarning(null)
     setEditDraft({
       name: ingredient.name,
-      calories: String(ingredient.calories),
-      protein: String(ingredient.protein),
-      carbs: String(ingredient.carbs),
-      fat: String(ingredient.fat),
-      unit: ingredient.unit || 'per 100g',
-      serving_quantity: ingredient.serving_quantity > 1 ? String(ingredient.serving_quantity) : '',
+      ...nutritionFormFromIngredient(ingredient),
+      legacyUnit: isStandardUnit(ingredient.unit) ? null : ingredient.unit,
     })
     setActionError('')
   }
@@ -119,27 +177,32 @@ function IngredientDatabase() {
   const handleCancelEdit = () => {
     setEditingId(null)
     setEditDraft({})
+    setEditWarning(null)
   }
 
-  const handleSaveEdit = async () => {
-    setEditSaving(true)
+  const saveEdit = async (override = false) => {
     setActionError('')
+    if (!isNutritionFormComplete(editDraft)) {
+      setActionError('Fill in calories, protein, carbs and fat, and the serving weight when values are per serving.')
+      return
+    }
+    setEditSaving(true)
     try {
-      const servingQty = parseInt(editDraft.serving_quantity, 10)
       await updateIngredient(editingId, {
         name: editDraft.name.trim(),
-        calories: Number(editDraft.calories) || 0,
-        protein: Number(editDraft.protein) || 0,
-        carbs: Number(editDraft.carbs) || 0,
-        fat: Number(editDraft.fat) || 0,
-        unit: editDraft.unit?.trim() || 'per 100g',
-        serving_quantity: servingQty > 1 ? servingQty : 1,
+        ...nutritionFormToPayload(editDraft),
+        override_calorie_check: override,
       })
       setEditingId(null)
       setEditDraft({})
+      setEditWarning(null)
       await reloadIngredients()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to update ingredient.')
+      if (isCalorieMismatch(err)) {
+        setEditWarning(err.detail)
+      } else {
+        setActionError(err instanceof Error ? err.message : 'Failed to update ingredient.')
+      }
     } finally {
       setEditSaving(false)
     }
@@ -184,6 +247,27 @@ function IngredientDatabase() {
         />
       </div>
 
+      {audit && Object.keys(reviewFlags).length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-mise-500">Needs review</span>
+          {REVIEW_FILTERS.map(({ key, label }) => audit[key].length > 0 && (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={activeFilter === key}
+              onClick={() => setReviewFilter(activeFilter === key ? null : key)}
+              className={`rounded border px-2.5 py-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember ${
+                activeFilter === key
+                  ? 'border-mise-700 bg-mise-800 text-mise-300'
+                  : 'border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300'
+              }`}
+            >
+              {audit[key].length} {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Inline pre-fill form */}
       {draft !== null && (
         <form
@@ -194,87 +278,26 @@ function IngredientDatabase() {
           {actionError && (
             <p className="mb-3 text-xs text-rose-400">{actionError}</p>
           )}
-          <div className="grid gap-3 sm:grid-cols-6">
-            <div className="sm:col-span-2">
-              <label htmlFor="draft-name" className="mb-1 block text-xs text-mise-500">Name</label>
-              <input
-                id="draft-name"
-                type="text"
-                value={draft.name}
-                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                placeholder="Name"
-                className={fieldCls}
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="draft-calories" className="mb-1 block text-xs text-mise-500">Calories</label>
-              <input
-                id="draft-calories"
-                type="number"
-                step="any"
-                min="0"
-                value={draft.calories}
-                onChange={(e) => setDraft((d) => ({ ...d, calories: e.target.value }))}
-                placeholder="kcal"
-                className={fieldCls}
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="draft-protein" className="mb-1 block text-xs text-mise-500">Protein (g)</label>
-              <input
-                id="draft-protein"
-                type="number"
-                step="any"
-                min="0"
-                value={draft.protein}
-                onChange={(e) => setDraft((d) => ({ ...d, protein: e.target.value }))}
-                placeholder="g"
-                className={fieldCls}
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="draft-carbs" className="mb-1 block text-xs text-mise-500">Carbs (g)</label>
-              <input
-                id="draft-carbs"
-                type="number"
-                step="any"
-                min="0"
-                value={draft.carbs}
-                onChange={(e) => setDraft((d) => ({ ...d, carbs: e.target.value }))}
-                placeholder="g"
-                className={fieldCls}
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="draft-fat" className="mb-1 block text-xs text-mise-500">Fat (g)</label>
-              <input
-                id="draft-fat"
-                type="number"
-                step="any"
-                min="0"
-                value={draft.fat}
-                onChange={(e) => setDraft((d) => ({ ...d, fat: e.target.value }))}
-                placeholder="g"
-                className={fieldCls}
-                required
-              />
-            </div>
-          </div>
-          <div className="mt-3">
-            <label htmlFor="draft-unit" className="mb-1 block text-xs text-mise-500">Serving Size</label>
+          <div>
+            <label htmlFor="draft-name" className="mb-1 block text-xs text-mise-500">Name</label>
             <input
-              id="draft-unit"
+              id="draft-name"
               type="text"
-              value={draft.unit ?? 'per 100g'}
-              onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))}
-              placeholder="e.g. per 100g, per 1 cup"
-              className={`${fieldCls} max-w-xs`}
+              value={draft.name}
+              onChange={(e) => updateDraft({ ...draft, name: e.target.value })}
+              placeholder="Name"
+              className={`${fieldCls} sm:max-w-md`}
+              required
             />
           </div>
+          <div className="mt-4">
+            <NutritionFields form={draft} onChange={updateDraft} idPrefix="draft-nutrition" />
+          </div>
+          {draftWarning && (
+            <div className="mt-3">
+              <CalorieMismatchNotice detail={draftWarning} busy={submitting} onConfirm={() => saveDraft(true)} />
+            </div>
+          )}
           <div className="mt-3 flex items-center gap-3">
             <button
               type="submit"
@@ -305,7 +328,7 @@ function IngredientDatabase() {
           <thead className="bg-mise-950/60 text-xs uppercase tracking-wide text-mise-500">
             <tr>
               <th scope="col" className="px-4 py-3 font-medium">Name</th>
-              <th scope="col" className="px-4 py-3 font-medium">Calories</th>
+              <th scope="col" className="px-4 py-3 font-medium">Calories per 100 g</th>
               <th scope="col" className="px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
@@ -326,86 +349,33 @@ function IngredientDatabase() {
                   {ingredient.id === editingId ? (
                     <tr key={ingredient.id} className="bg-mise-800/20">
                       <td colSpan={3} className="px-4 py-3">
-                        <div className="grid gap-3 sm:grid-cols-6">
-                          <div className="sm:col-span-2">
-                            <label className="mb-1 block text-xs text-mise-500">Name</label>
-                            <input
-                              type="text"
-                              value={editDraft.name}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
-                              className={fieldCls}
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs text-mise-500">Calories</label>
-                            <input
-                              type="number"
-                              step="any"
-                              min="0"
-                              value={editDraft.calories}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, calories: e.target.value }))}
-                              className={fieldCls}
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs text-mise-500">Protein (g)</label>
-                            <input
-                              type="number"
-                              step="any"
-                              min="0"
-                              value={editDraft.protein}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, protein: e.target.value }))}
-                              className={fieldCls}
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs text-mise-500">Carbs (g)</label>
-                            <input
-                              type="number"
-                              step="any"
-                              min="0"
-                              value={editDraft.carbs}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, carbs: e.target.value }))}
-                              className={fieldCls}
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs text-mise-500">Fat (g)</label>
-                            <input
-                              type="number"
-                              step="any"
-                              min="0"
-                              value={editDraft.fat}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, fat: e.target.value }))}
-                              className={fieldCls}
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs text-mise-500">Unit</label>
-                            <input
-                              type="text"
-                              value={editDraft.unit ?? ingredient.unit}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, unit: e.target.value }))}
-                              className={fieldCls}
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs text-mise-500">Pieces per serving</label>
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={editDraft.serving_quantity}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, serving_quantity: e.target.value }))}
-                              placeholder="1"
-                              className={fieldCls}
-                            />
-                          </div>
+                        <div>
+                          <label htmlFor="edit-name" className="mb-1 block text-xs text-mise-500">Name</label>
+                          <input
+                            id="edit-name"
+                            type="text"
+                            value={editDraft.name}
+                            onChange={(e) => updateEditDraft({ ...editDraft, name: e.target.value })}
+                            className={`${fieldCls} sm:max-w-md`}
+                          />
                         </div>
+                        <div className="mt-4">
+                          <NutritionFields
+                            form={editDraft}
+                            onChange={updateEditDraft}
+                            idPrefix="edit-nutrition"
+                            legacyUnit={editDraft.legacyUnit}
+                          />
+                        </div>
+                        {editWarning && (
+                          <div className="mt-3">
+                            <CalorieMismatchNotice detail={editWarning} busy={editSaving} onConfirm={() => saveEdit(true)} />
+                          </div>
+                        )}
                         <div className="mt-3 flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={handleSaveEdit}
+                            onClick={() => saveEdit(false)}
                             disabled={editSaving}
                             className="rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
                           >
@@ -424,7 +394,7 @@ function IngredientDatabase() {
                   ) : (
                     <>
                       <tr key={ingredient.id} className="hover:bg-mise-800/30">
-                        <td className="whitespace-nowrap p-0 cursor-pointer">
+                        <td className={`whitespace-nowrap border-l-2 p-0 cursor-pointer ${reviewFlags[ingredient.id] ? 'border-l-ember' : 'border-l-transparent'}`}>
                           <button
                             type="button"
                             onClick={() => setExpandedId(expandedId === ingredient.id ? null : ingredient.id)}
@@ -475,12 +445,28 @@ function IngredientDatabase() {
                         <tr className="bg-mise-800/10 hover:bg-mise-800/20">
                           <td colSpan={3} className="px-4 py-3">
                             <div className="space-y-1.5 text-xs text-mise-500">
-                              <div className="flex gap-8">
+                              <div className="flex flex-wrap gap-x-8 gap-y-1">
                                 <div>Protein: <span className="font-medium text-mise-400">{ingredient.protein}g</span></div>
                                 <div>Carbs: <span className="font-medium text-mise-400">{ingredient.carbs}g</span></div>
                                 <div>Fat: <span className="font-medium text-mise-400">{ingredient.fat}g</span></div>
-                                <div>Unit: <span className="font-medium text-mise-400">{ingredient.unit}</span></div>
                               </div>
+                              {ingredient.per_serving ? (
+                                <p>
+                                  One serving ({Math.round(ingredient.grams_per_piece * (ingredient.serving_quantity || 1) * 10) / 10} g):{' '}
+                                  <span className="font-medium text-mise-400">{Math.round(ingredient.per_serving.calories)} cal</span>
+                                  {ingredient.serving_quantity > 1 && (
+                                    <>
+                                      {'. '}One piece ({ingredient.grams_per_piece} g):{' '}
+                                      <span className="font-medium text-mise-400">{Math.round(ingredient.per_piece.calories)} cal</span>
+                                    </>
+                                  )}
+                                </p>
+                              ) : (
+                                <p>No serving weight set, so pieces and servings can’t be converted.</p>
+                              )}
+                              {(reviewFlags[ingredient.id] ?? []).map((reason) => (
+                                <p key={reason} className="border-l-2 border-ember pl-3 text-mise-300">{reason}</p>
+                              ))}
                             </div>
                           </td>
                         </tr>
