@@ -4,13 +4,13 @@ import remarkBreaks from 'remark-breaks'
 
 const mdComponents = {
   h1: ({ children }) => (
-    <h2 className="text-base font-semibold text-mise-300">{children}</h2>
+    <h2 className="text-xl font-semibold text-mise-300">{children}</h2>
   ),
   h2: ({ children }) => (
-    <h3 className="text-sm font-semibold text-mise-400">{children}</h3>
+    <h3 className="text-lg font-semibold text-mise-300">{children}</h3>
   ),
   h3: ({ children }) => (
-    <h4 className="text-xs font-semibold uppercase tracking-widest text-mise-500">{children}</h4>
+    <h4 className="text-base font-semibold text-mise-300">{children}</h4>
   ),
   p: ({ children }) => (
     <p className="text-sm text-mise-400">{children}</p>
