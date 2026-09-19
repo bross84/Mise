@@ -11,15 +11,27 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`
+    let detail = null
 
     try {
       const errorBody = await response.json()
-      message = errorBody?.detail || errorBody?.message || message
+      detail = errorBody?.detail ?? null
+      if (typeof detail === 'string') {
+        message = detail
+      } else if (Array.isArray(detail)) {
+        message = detail.map((d) => d?.msg).filter(Boolean).join('; ') || message
+      } else {
+        message = detail?.message || errorBody?.message || message
+      }
     } catch {
       // Fall back to the generic status message.
     }
 
-    throw new Error(message)
+    // `detail` keeps the server's structured payload (e.g. the calorie-check warning).
+    const error = new Error(message)
+    error.status = response.status
+    error.detail = detail
+    throw error
   }
 
   if (response.status === 204) {
@@ -114,6 +126,10 @@ export function searchIngredients(q, { includeExternal = true, externalSource } 
     params.set('external_source', String(externalSource))
   }
   return request(`/ingredients/search?${params.toString()}`)
+}
+
+export function getIngredientAudit() {
+  return request('/ingredients/audit')
 }
 
 export function createIngredient(data) {

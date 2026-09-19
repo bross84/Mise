@@ -1452,7 +1452,7 @@ function RecipeDetail() {
                               const macroLine = bd
                                 ? bd.matched
                                   ? `Cal: ${Math.round(bd.calories)}  P: ${Math.round(bd.protein)}g  F: ${Math.round(bd.fat)}g  C: ${Math.round(bd.carbs)}g`
-                                  : '—'
+                                  : (bd.note ?? '—')
                                 : null
                               return (
                                 <li

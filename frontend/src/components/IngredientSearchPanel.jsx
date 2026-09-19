@@ -1,48 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
 import { blockIngredient, createIngredient, searchIngredients } from '../api/client.js'
 import { toTitleCase } from '../utils/text.js'
+import NutritionFields, { CalorieMismatchNotice } from './NutritionFields.jsx'
+import { emptyNutritionForm, isCalorieMismatch, nutritionFormToPayload } from '../utils/nutrition.js'
 
 const inputCls =
   'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
 
-function formatServingMacroLabel(result) {
-  const servingCandidate =
-    result.serving_grams ??
-    result.serving_size_g ??
-    result.serving_size ??
-    result.amount_grams ??
-    100
-  const numericServing = Number(servingCandidate)
-  const servingG = Number.isFinite(numericServing) && numericServing > 0 ? numericServing : 100
-
-  // Any unit other than "per 100g" (OFF serving-level macros, a custom local ingredient
-  // stored per-serving) means the macros are already at that basis — scaling again would
-  // double-count them.
-  const isPreScaled = result.unit && result.unit !== 'per 100g'
-  const scale = isPreScaled ? 1 : servingG / 100
-
-  return `Per ${servingG}g: ${Math.round((Number(result.calories) || 0) * scale)} cal · ${Math.round((Number(result.protein) || 0) * scale)}g protein · ${Math.round((Number(result.carbs) || 0) * scale)}g carbs · ${Math.round((Number(result.fat) || 0) * scale)}g fat`
+// Results are stored and shown per 100 g. Local rows saved under an older unit keep their own
+// label ("Per 45g") and are never rescaled.
+function formatMacroLine(result) {
+  const basis = String(result.unit || 'per 100g').replace(/^per\s+/i, '')
+  const round = (n) => Math.round(Number(n) || 0)
+  const grams = (n) => Math.round((Number(n) || 0) * 10) / 10
+  return `Per ${basis}: ${round(result.calories)} cal · ${grams(result.protein)}g protein · ${grams(result.carbs)}g carbs · ${grams(result.fat)}g fat`
 }
 
-function formatOffServingText(result) {
-  const servingCandidates = [
-    result.serving_grams,
-    result.serving_size_g,
-    result.serving_size,
-    result.amount_grams,
-  ]
-
-  for (const candidate of servingCandidates) {
-    const numeric = Number(candidate)
-    if (Number.isFinite(numeric) && numeric > 0) {
-      return `Per serving: ${numeric}g`
-    }
-  }
-
-  return 'Per 100g'
+function formatServingLine(result) {
+  const standard = !result.unit || result.unit === 'per 100g'
+  const grams = Number(result.serving_grams)
+  if (!standard || !(grams > 0)) return null
+  const line = `Serving ${grams} g = ${Math.round(((Number(result.calories) || 0) * grams) / 100)} cal`
+  return result.converted_from_serving ? `${line}. Converted from per-serving values.` : line
 }
 
-const emptyCustomForm = { name: '', calories: '', protein: '', carbs: '', fat: '', unit: 'per 100g', serving_quantity: '' }
+const emptyCustomForm = { name: '', barcode: '', ...emptyNutritionForm }
+
+// Ties a calorie warning to the result it came from, so it never shows on a different list.
+const resultKey = (result) => `${result.source}:${result.source_id ?? result.name}`
 
 /**
  * Search local/USDA/Open Food Facts ingredients, or add one by barcode or by hand.
@@ -63,6 +48,8 @@ export default function IngredientSearchPanel({ ingredientName, onSelect, onClos
   const [customMode, setCustomMode] = useState(false)
   const [customForm, setCustomForm] = useState(emptyCustomForm)
   const [savingCustom, setSavingCustom] = useState(false)
+  const [customWarning, setCustomWarning] = useState(null)
+  const [addWarning, setAddWarning] = useState(null) // { key, detail } for one search result
 
   const handleBlock = async (result, i) => {
     if (!result.source_id) return
@@ -163,7 +150,7 @@ export default function IngredientSearchPanel({ ingredientName, onSelect, onClos
     runBarcodeLookup(e.target.value)
   }
 
-  const handleUse = async (result, index) => {
+  const handleUse = async (result, index, override = false) => {
     setSavingIndex(index)
     setError('')
     try {
@@ -171,56 +158,79 @@ export default function IngredientSearchPanel({ ingredientName, onSelect, onClos
       if (result.source === 'local') {
         saved = { id: result.ingredient_id, name: result.name }
       } else {
+        // External results are always per 100 g; the server re-checks calories before saving.
         saved = await createIngredient({
           name: result.name,
-          calories: Number(result.calories) || 0,
-          protein: Number(result.protein) || 0,
-          carbs: Number(result.carbs) || 0,
-          fat: Number(result.fat) || 0,
-          unit: result.serving_grams ? `per ${result.serving_grams}g` : (result.unit || 'per 100g'),
+          calories: Number(result.calories),
+          protein: Number(result.protein),
+          carbs: Number(result.carbs),
+          fat: Number(result.fat),
+          nutrition_basis: 'per_100g',
+          serving_grams: result.serving_grams ?? null,
           source: result.source === 'usda' ? 'usda' : 'off',
           barcode: result.source === 'openfoodfacts' ? (result.barcode || null) : null,
+          override_calorie_check: override,
         })
       }
+      setAddWarning(null)
       const keepOpen = await onSelect(saved)
       if (keepOpen !== false) onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add ingredient.')
+      if (isCalorieMismatch(err)) {
+        setAddWarning({ key: resultKey(result), detail: err.detail })
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to add ingredient.')
+      }
     } finally {
       setSavingIndex(null)
     }
   }
 
-  const openCustomForm = () => {
-    setCustomForm({ ...emptyCustomForm, name: query.trim() })
+  const openCustomForm = (prefill = {}) => {
+    setCustomWarning(null)
+    setCustomForm({
+      ...emptyCustomForm,
+      name: prefill.name ?? query.trim(),
+      barcode: prefill.barcode ?? '',
+      serving_grams: prefill.serving_grams ? String(prefill.serving_grams) : '',
+    })
     setCustomMode(true)
   }
 
-  const handleSaveCustom = async (e) => {
-    e.preventDefault()
+  const updateCustomForm = (next) => {
+    setCustomWarning(null)
+    setCustomForm(next)
+  }
+
+  const saveCustom = async (override = false) => {
     const name = customForm.name.trim()
     if (!name) return
     setSavingCustom(true)
     setError('')
     try {
-      const servingQty = parseInt(customForm.serving_quantity, 10)
       const saved = await createIngredient({
         name,
-        calories: Number(customForm.calories) || 0,
-        protein: Number(customForm.protein) || 0,
-        carbs: Number(customForm.carbs) || 0,
-        fat: Number(customForm.fat) || 0,
-        unit: customForm.unit?.trim() || 'per 100g',
+        ...nutritionFormToPayload(customForm),
         source: 'local',
-        ...(servingQty > 1 ? { serving_quantity: servingQty } : {}),
+        barcode: customForm.barcode || null,
+        override_calorie_check: override,
       })
       const keepOpen = await onSelect(saved)
       if (keepOpen !== false) onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save ingredient.')
+      if (isCalorieMismatch(err)) {
+        setCustomWarning(err.detail)
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to save ingredient.')
+      }
     } finally {
       setSavingCustom(false)
     }
+  }
+
+  const handleSaveCustom = (e) => {
+    e.preventDefault()
+    void saveCustom(false)
   }
 
   return (
@@ -297,7 +307,7 @@ export default function IngredientSearchPanel({ ingredientName, onSelect, onClos
             </button>
             <button
               type="button"
-              onClick={openCustomForm}
+              onClick={() => openCustomForm()}
               className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               Add custom
@@ -307,50 +317,19 @@ export default function IngredientSearchPanel({ ingredientName, onSelect, onClos
       )}
 
       {customMode && (
-        <form onSubmit={handleSaveCustom} className="mt-2 space-y-2 rounded border border-mise-800 bg-mise-900/60 p-3">
+        <form onSubmit={handleSaveCustom} className="mt-2 space-y-3 rounded border border-mise-800 bg-mise-900/60 p-3">
           <p className="text-xs font-medium text-mise-500">Custom ingredient</p>
           <input
             type="text"
             value={customForm.name}
-            onChange={(e) => setCustomForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) => updateCustomForm({ ...customForm, name: e.target.value })}
             placeholder="Name"
+            aria-label="Ingredient name"
             required
             className={inputCls}
           />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="text"
-              value={customForm.unit}
-              onChange={(e) => setCustomForm((f) => ({ ...f, unit: e.target.value }))}
-              placeholder="Unit (e.g. per 100g, per 45g)"
-              className={inputCls}
-            />
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={customForm.serving_quantity}
-              onChange={(e) => setCustomForm((f) => ({ ...f, serving_quantity: e.target.value }))}
-              placeholder="Pieces per serving (e.g. 3)"
-              className={inputCls}
-            />
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            {[['calories', 'Cal'], ['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat']].map(([field, label]) => (
-              <div key={field}>
-                <label className="mb-1 block text-[10px] text-mise-500">{label}</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={customForm[field]}
-                  onChange={(e) => setCustomForm((f) => ({ ...f, [field]: e.target.value }))}
-                  placeholder="0"
-                  className={inputCls}
-                />
-              </div>
-            ))}
-          </div>
+          <NutritionFields form={customForm} onChange={updateCustomForm} idPrefix="custom-nutrition" />
+          <CalorieMismatchNotice detail={customWarning} busy={savingCustom} onConfirm={() => saveCustom(true)} />
           <div className="flex gap-2">
             <button
               type="submit"
@@ -372,51 +351,83 @@ export default function IngredientSearchPanel({ ingredientName, onSelect, onClos
 
       {results.length > 0 && (
         <ul className="space-y-1">
-          {results.map((r, i) => (
-            <li key={i} className="flex items-center gap-3 rounded border border-mise-800 bg-mise-900/60 px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-mise-300">{toTitleCase(r.name)}</span>
-                  {r.source_url && (
-                    <a href={r.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-mise-600 hover:text-mise-400" title="View source">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                    </a>
+          {results.map((r, i) => {
+            const complete = r.nutrition_complete !== false
+            const servingLine = complete ? formatServingLine(r) : null
+            return (
+              <li key={i} className="rounded border border-mise-800 bg-mise-900/60">
+                <div className="flex items-center gap-3 px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm text-mise-300">{toTitleCase(r.name)}</span>
+                      {r.source_url && (
+                        <a href={r.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-mise-600 hover:text-mise-400" title="View source">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        </a>
+                      )}
+                      {r.source === 'usda' && (
+                        <span className="rounded-full border border-sky-500/40 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-200">USDA</span>
+                      )}
+                      {r.source === 'openfoodfacts' && (
+                        <span className="rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-200">OFF</span>
+                      )}
+                    </div>
+                    {r.source === 'openfoodfacts' && r.barcode && (
+                      <p className="mt-0.5 text-[11px] text-mise-600">Barcode: {r.barcode}</p>
+                    )}
+                    {complete ? (
+                      <>
+                        <p className="mt-0.5 text-xs text-mise-500">{formatMacroLine(r)}</p>
+                        {servingLine && <p className="mt-0.5 text-[11px] text-mise-500">{servingLine}</p>}
+                      </>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-mise-400">
+                        {r.incomplete_reason || 'Nutrition values are incomplete'}. Enter the values manually.
+                      </p>
+                    )}
+                  </div>
+                  {r.source_id && (
+                    <button
+                      type="button"
+                      onClick={() => handleBlock(r, i)}
+                      className="shrink-0 rounded border border-mise-800 px-2 py-1.5 text-[10px] text-mise-500 transition hover:border-rose-500/40 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      title="Block this result"
+                    >
+                      Block
+                    </button>
                   )}
-                  {r.source === 'usda' && (
-                    <span className="rounded-full border border-sky-500/40 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-200">USDA</span>
-                  )}
-                  {r.source === 'openfoodfacts' && (
-                    <span className="rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-200">OFF</span>
+                  {complete ? (
+                    <button
+                      type="button"
+                      disabled={savingIndex !== null}
+                      onClick={() => handleUse(r, i)}
+                      className="shrink-0 rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                    >
+                      {savingIndex === i ? 'Adding…' : 'Add'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openCustomForm({ name: r.name, barcode: r.barcode, serving_grams: r.serving_grams })}
+                      className="shrink-0 rounded border border-mise-700 px-3 py-1.5 text-xs font-semibold text-mise-300 transition hover:border-mise-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                    >
+                      Enter manually
+                    </button>
                   )}
                 </div>
-                {r.source === 'openfoodfacts' && (
-                  <p className="mt-0.5 text-[11px] text-mise-500">
-                    <span>{formatOffServingText(r)}</span>
-                    {r.barcode && <span className="ml-2 text-mise-600">Barcode: {r.barcode}</span>}
-                  </p>
+                {addWarning?.key === resultKey(r) && (
+                  <div className="px-3 pb-2">
+                    <CalorieMismatchNotice
+                      detail={addWarning.detail}
+                      confirmLabel="Add anyway"
+                      busy={savingIndex === i}
+                      onConfirm={() => handleUse(r, i, true)}
+                    />
+                  </div>
                 )}
-                <p className="mt-0.5 text-xs text-mise-500">{formatServingMacroLabel(r)}</p>
-              </div>
-              {r.source_id && (
-                <button
-                  type="button"
-                  onClick={() => handleBlock(r, i)}
-                  className="shrink-0 rounded border border-mise-800 px-2 py-1.5 text-[10px] text-mise-500 transition hover:border-rose-500/40 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                  title="Block this result"
-                >
-                  Block
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={savingIndex !== null}
-                onClick={() => handleUse(r, i)}
-                className="shrink-0 rounded bg-ember px-3 py-1.5 text-xs font-semibold text-mise-950 transition hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                {savingIndex === i ? 'Adding…' : 'Add'}
-              </button>
-            </li>
-          ))}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

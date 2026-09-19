@@ -29,6 +29,7 @@ from app.schemas.recipe import (
 )
 from app.services.ai import AIService
 from app.services.matching import IngredientMatcher
+from app.services.nutrition import UNIT_TO_GRAMS, ingredient_grams, macro_factor
 
 router = APIRouter(prefix="/api/recipes", tags=["recipes"])
 
@@ -318,83 +319,6 @@ async def match_ingredients(payload: MatchIngredientsRequest, db: Session = Depe
     return MatchIngredientsResponse(results=results)
 
 
-_UNIT_TO_GRAMS: dict[str, float] = {
-    'g': 1.0, 'gram': 1.0, 'grams': 1.0,
-    'kg': 1000.0, 'kilogram': 1000.0, 'kilograms': 1000.0,
-    'oz': 28.35, 'ounce': 28.35, 'ounces': 28.35,
-    'lb': 453.6, 'lbs': 453.6, 'pound': 453.6, 'pounds': 453.6,
-    'tsp': 4.0, 'teaspoon': 4.0, 'teaspoons': 4.0,
-    'tbsp': 12.0, 'tablespoon': 12.0, 'tablespoons': 12.0,
-    'cup': 240.0, 'cups': 240.0,
-    'ml': 1.0, 'milliliter': 1.0, 'milliliters': 1.0, 'millilitre': 1.0, 'millilitres': 1.0,
-}
-
-
-# Average whole-piece weights (grams) for common count-based produce.
-# Used as a last-resort fallback when unit is absent and serving_grams is unset.
-_PRODUCE_WEIGHTS: dict[str, float] = {
-    'apple': 182, 'apricot': 35, 'avocado': 150,
-    'banana': 118, 'beet': 82, 'bell pepper': 119,
-    'broccoli': 91,  # per floret/small head
-    'carrot': 61, 'celery': 40,  # per stalk
-    'cucumber': 201, 'egg': 50,
-    'garlic': 3,  # per clove
-    'grapefruit': 246, 'jalapeño': 14, 'jalapeno': 14,
-    'kiwi': 69, 'leek': 89, 'lemon': 58, 'lime': 44,
-    'mango': 207, 'mushroom': 18,  # per medium mushroom
-    'onion': 110, 'orange': 131, 'parsnip': 85,
-    'peach': 150, 'pear': 178, 'pepper': 119,
-    'plum': 66, 'potato': 150, 'radish': 10,
-    'scallion': 15, 'shallot': 30,
-    'sweet potato': 130, 'tomato': 123,
-    'turnip': 122, 'zucchini': 196,
-}
-
-
-def _count_weight_lookup(ingredient_name: str) -> float | None:
-    """Return a fallback gram weight for count-based produce by matching name keywords."""
-    name = re.sub(r'[^a-z ]', ' ', ingredient_name.lower())
-    name = re.sub(r'\s+', ' ', name).strip()
-    # Longest-match first so "bell pepper" beats "pepper"
-    for key in sorted(_PRODUCE_WEIGHTS, key=len, reverse=True):
-        if key in name:
-            return _PRODUCE_WEIGHTS[key]
-    return None
-
-
-_COUNT_UNITS: frozenset[str] = frozenset({'count', 'whole', 'piece', 'pieces', 'item', 'items', 'each'})
-
-def _to_grams(amount: float, unit: str, serving_grams: float | None = None,
-              ingredient_name: str = '') -> float | None:
-    stripped = unit.lower().strip()
-    if stripped and stripped not in _COUNT_UNITS:
-        factor = _UNIT_TO_GRAMS.get(stripped)
-        return None if factor is None else amount * factor
-    # No unit or count-based unit: prefer DB serving_grams, then produce table, else skip
-    if serving_grams and serving_grams > 0:
-        return amount * serving_grams
-    fallback = _count_weight_lookup(ingredient_name)
-    if fallback:
-        return amount * fallback
-    return None
-
-
-def _reference_grams(db_ing: Ingredient) -> float:
-    """Return the gram quantity that db_ing's stored macro values are based on."""
-    if db_ing.serving_grams and db_ing.serving_grams > 0:
-        return float(db_ing.serving_grams)
-    unit = (db_ing.unit or '').lower().strip()
-    m = re.match(r'^per\s+([\d.]+)\s*g', unit)
-    if m:
-        try:
-            v = float(m.group(1))
-            if v > 0:
-                return v
-        except ValueError:
-            pass
-    return 100.0
-
-
 class MacroValues(BaseModel):
     calories: float
     protein: float
@@ -411,6 +335,7 @@ class IngredientBreakdown(BaseModel):
     carbs: float | None
     fat: float | None
     matched: bool
+    note: str | None = None
 
 
 class MacrosResponse(BaseModel):
@@ -883,22 +808,13 @@ def _compute_macros(recipe: Recipe, db: Session) -> MacrosResponse:
             continue
 
         amount = float(amount_raw)
-        stripped_unit = unit_raw.lower().strip()
-        if stripped_unit in _COUNT_UNITS or not stripped_unit:
-            # Count-based: divide count by serving_quantity so e.g. "6 count" of a
-            # 3-per-serving item gives factor=2 (2 servings' worth of macros)
-            serving_qty = float(getattr(db_ing, "serving_quantity", None) or 1)
-            factor = amount / serving_qty
-        else:
-            grams = _to_grams(amount, unit_raw, getattr(db_ing, "serving_grams", None), ing_name)
-            if grams is None or grams <= 0:
-                breakdown.append(IngredientBreakdown(
-                    recipe_ingredient_id=rid, name=ing_name, amount_display=amount_display,
-                    calories=None, protein=None, carbs=None, fat=None, matched=False,
-                ))
-                continue
-            ref_g = _reference_grams(db_ing)
-            factor = grams / ref_g
+        factor, note = macro_factor(db_ing, amount, unit_raw, ing_name)
+        if factor is None:
+            breakdown.append(IngredientBreakdown(
+                recipe_ingredient_id=rid, name=ing_name, amount_display=amount_display,
+                calories=None, protein=None, carbs=None, fat=None, matched=False, note=note,
+            ))
+            continue
         cal = db_ing.calories * factor
         prot = db_ing.protein * factor
         carbs_v = db_ing.carbs * factor
@@ -1004,8 +920,7 @@ def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(g
                 continue
 
             db_ing = db.query(Ingredient).filter(Ingredient.id == int(ing_id)).first()
-            serving_g = getattr(db_ing, "serving_grams", None) if db_ing else None
-            grams = _to_grams(amount, unit_raw, serving_g, name)
+            grams, _ = ingredient_grams(db_ing, amount, unit_raw, name)
             display_name = db_ing.name if db_ing else name
 
             if ing_id not in merged:
@@ -1039,7 +954,7 @@ def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(g
         else:
             total_g = entry["total_grams"] or 0.0
             dom_unit = entry["dominant_unit"] or "g"
-            factor = _UNIT_TO_GRAMS.get(dom_unit.lower(), 1.0)
+            factor = UNIT_TO_GRAMS.get(dom_unit.lower(), 1.0)
             converted = total_g / factor
             lines.append(f"{name} - {_fmt_amount(converted)} {dom_unit}")
 
