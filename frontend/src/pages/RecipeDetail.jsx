@@ -210,6 +210,12 @@ function makeDraftIngredient(values = {}) {
   }
 }
 
+// A row is "not linked" once it has a name but no ingredient-database match. Blank rows
+// are excluded: they're dropped on save, so flagging them would only add noise.
+function isUnlinked(ing) {
+  return !ing.ingredient_id && Boolean(ing.name.trim())
+}
+
 // Collapses an ordered ingredient list into contiguous { name, items } sections.
 // A null/blank group_name yields a section with name === null (rendered without a heading).
 function groupIngredients(list) {
@@ -226,7 +232,9 @@ function groupIngredients(list) {
   return sections
 }
 
-function recipeToDraft(recipe) {
+// Linked rows open in the editor under their database name, matching what view mode shows;
+// the name typed at import time ("green peppers") is only a fallback for unlinked rows.
+function recipeToDraft(recipe, ingredientMap = {}) {
   return {
     title: recipe.title ?? '',
     servings: recipe.servings ?? 1,
@@ -235,7 +243,9 @@ function recipeToDraft(recipe) {
     instructions: recipe.instructions ?? stepsToInstructions(recipe.steps ?? []),
     source_url: recipe.source_url ?? '',
     cookbook: recipe.cookbook ?? '',
-    ingredients: (recipe.ingredients ?? []).map(makeDraftIngredient),
+    ingredients: (recipe.ingredients ?? []).map((ing) =>
+      makeDraftIngredient({ ...ing, name: ingredientMap[ing.ingredient_id] ?? ing.name }),
+    ),
   }
 }
 
@@ -597,7 +607,7 @@ function RecipeDetail() {
   }
 
   const handleEnterEdit = () => {
-    setDraft(recipeToDraft(recipe))
+    setDraft(recipeToDraft(recipe, ingredientMap))
     setOpenIngredientSearchId(null)
     setTagInput('')
     setSaveError('')
@@ -677,6 +687,8 @@ function RecipeDetail() {
       ),
     }))
   }
+
+  const unlinkedCount = draft ? draft.ingredients.filter(isUnlinked).length : 0
 
   // Moves an ingredient one row up/down (direction -1 or 1). Swapping past a row from a
   // different section adopts that section's group_name — otherwise crossing a boundary
@@ -1189,7 +1201,14 @@ function RecipeDetail() {
           {/* Ingredients editor */}
           <section className="rounded border border-theme bg-mise-900 p-4">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
+              <div className="flex items-baseline gap-3">
+                <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
+                {unlinkedCount > 0 && (
+                  <span className="text-[11px] text-mise-400">
+                    {unlinkedCount} of {draft.ingredients.filter((i) => i.name.trim()).length} not linked
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() =>
@@ -1233,17 +1252,34 @@ function RecipeDetail() {
                     </button>
                   </div>
                 )}
-                <div className="grid grid-cols-12 gap-2 rounded border border-theme bg-mise-950/50 p-3">
+                <div className={`grid grid-cols-12 gap-2 rounded border border-theme bg-mise-950/50 p-3 ${isUnlinked(ing) ? 'border-l-2 !border-l-ember' : ''}`}>
                   <label htmlFor={`edit-ing-name-${ing.id}`} className="sr-only">Ingredient {index + 1} name</label>
-                  <input
-                    id={`edit-ing-name-${ing.id}`}
-                    type="text"
-                    value={ing.name}
-                    onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
-                    onFocus={() => setOpenIngredientSearchId(ing.id)}
-                    placeholder="Name"
-                    className={`${inputCls} col-span-4`}
-                  />
+                  <div className="col-span-4">
+                    <input
+                      id={`edit-ing-name-${ing.id}`}
+                      type="text"
+                      value={ing.name}
+                      onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
+                      onFocus={() => setOpenIngredientSearchId(ing.id)}
+                      placeholder="Name"
+                      className={`${inputCls} w-full`}
+                    />
+                    {ing.ingredient_id ? (
+                      <p className="mt-1 text-[11px] text-mise-500">Linked</p>
+                    ) : ing.name.trim() ? (
+                      <p className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-mise-400">
+                        Not linked
+                        <button
+                          type="button"
+                          onClick={() => setOpenIngredientSearchId(ing.id)}
+                          aria-label={`Find database match for ingredient ${index + 1}`}
+                          className="text-mise-300 underline underline-offset-2 transition hover:text-mise-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                        >
+                          Find match
+                        </button>
+                      </p>
+                    ) : null}
+                  </div>
                   <label htmlFor={`edit-ing-amount-${ing.id}`} className="sr-only">Amount</label>
                   <input
                     id={`edit-ing-amount-${ing.id}`}
