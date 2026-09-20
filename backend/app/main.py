@@ -1,6 +1,5 @@
 import os
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -13,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.database import create_tables, engine, get_db
 from app.models.recipe import Recipe
+from app.models.timestamps import utcnow
 from app.routers import recipes, ingredients, settings, share, meal_plan
 from app.routers.settings import ENV_FILE as AI_SETTINGS_ENV_FILE
 from app.services.ai import AIService
@@ -138,7 +138,7 @@ async def upload_recipe_image(
     dest.write_bytes(contents)
 
     recipe.image_url = f'/uploads/{filename}'
-    recipe.updated_at = datetime.utcnow()
+    recipe.updated_at = utcnow()
     db.commit()
     db.refresh(recipe)
 
@@ -156,7 +156,7 @@ def delete_recipe_image(recipe_id: int, db: Session = Depends(get_db)):
         old_path.unlink(missing_ok=True)
 
     recipe.image_url = None
-    recipe.updated_at = datetime.utcnow()
+    recipe.updated_at = utcnow()
     db.commit()
 
     return RecipeImageResponse(image_url=None)

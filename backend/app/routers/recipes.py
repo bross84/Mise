@@ -4,7 +4,7 @@ import logging
 import re
 import uuid
 import zipfile
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.ingredient import Ingredient
 from app.models.recipe import Recipe
+from app.models.timestamps import utcnow
 from app.schemas.recipe import (
     AiEditRequest,
     AiEditResponse,
@@ -1046,7 +1047,7 @@ def update_recipe(recipe_id: int, data: RecipeUpdate, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Recipe not found")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(recipe, field, value)
-    recipe.updated_at = datetime.utcnow()
+    recipe.updated_at = utcnow()
     db.commit()
     db.refresh(recipe)
     return recipe

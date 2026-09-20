@@ -1,6 +1,6 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String
 from app.database import Base
+from app.models.timestamps import UTCDateTime, utcnow
 
 
 class BlockedIngredient(Base):
@@ -10,4 +10,4 @@ class BlockedIngredient(Base):
     name = Column(String, nullable=False)
     source = Column(String, nullable=False)
     source_id = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=utcnow)
