@@ -100,10 +100,10 @@ export function updateRecipe(id, data) {
   })
 }
 
-export function aiEditRecipe(id, instruction, conversation = []) {
+export function aiEditRecipe(id, instruction, conversation = [], draft = false) {
   return request(`/recipes/${encodeURIComponent(id)}/ai-edit`, {
     method: 'POST',
-    body: JSON.stringify({ instruction, conversation }),
+    body: JSON.stringify({ instruction, conversation, draft }),
   })
 }
 

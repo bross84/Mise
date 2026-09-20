@@ -11,8 +11,6 @@ const nextId = () => `m${Date.now()}-${(msgSeq += 1)}`
 const EXAMPLES = [
   'Halve the salt',
   'The instructions mention a skillet that isn’t in the ingredients — add it',
-  'Look this over and suggest how to make it better',
-  'The calories are too high — what could we cut?',
 ]
 
 export default function AiAssistPanel({ recipeId, recipe, open, onClose, onApplied }) {
@@ -30,7 +28,8 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, sending])
 
-  const send = async (text) => {
+  // draft=false is a plain conversation: the server never returns change cards for it.
+  const send = async (text, draft = false) => {
     const instruction = text.trim()
     if (!instruction || sending) return
 
@@ -43,7 +42,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
     setInput('')
     setSending(true)
     try {
-      const res = await aiEditRecipe(recipeId, instruction, priorConversation)
+      const res = await aiEditRecipe(recipeId, instruction, priorConversation, draft)
       const changes = res.changes ?? []
       const suggestions = res.suggestions ?? []
       setMessages((m) => [
@@ -180,15 +179,15 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
           {messages.length === 0 && (
             <div className="text-sm text-mise-500">
               <p>
-                Describe a change, or ask what to tweak — for taste, calories, or anything else. The assistant
-                proposes changes; you accept or decline each one.
+                Talk it through — nothing changes and no changes are suggested until you press Draft change. Then
+                you accept or decline each one.
               </p>
               <ul className="mt-3 space-y-1.5">
                 {EXAMPLES.map((ex) => (
                   <li key={ex}>
                     <button
                       type="button"
-                      onClick={() => send(ex)}
+                      onClick={() => send(ex, true)}
                       className="text-left text-xs text-mise-400 underline-offset-2 transition hover:text-mise-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
                     >
                       “{ex}”
@@ -274,11 +273,19 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
               }
             }}
             rows={2}
-            placeholder="Describe a change…"
+            placeholder="Ask or talk it through…"
             disabled={sending}
             className="w-full resize-none rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50"
           />
-          <div className="mt-2 flex justify-end">
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => send(input, true)}
+              disabled={sending || !input.trim()}
+              className="rounded border border-mise-700 px-3 py-1.5 text-xs font-semibold text-mise-300 transition hover:border-mise-600 hover:text-mise-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              Draft change
+            </button>
             <button
               type="submit"
               disabled={sending || !input.trim()}

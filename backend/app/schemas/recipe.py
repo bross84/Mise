@@ -69,6 +69,8 @@ class AiEditMessage(BaseModel):
 class AiEditRequest(BaseModel):
     instruction: str
     conversation: list[AiEditMessage] = []
+    # Only the cook pressing "Draft change" sets this. Without it the assistant just talks.
+    draft: bool = False
 
 
 class Change(BaseModel):
