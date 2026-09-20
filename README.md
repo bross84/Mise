@@ -111,6 +111,8 @@ Copy `.env.example` to `.env` in the project root (git-ignored) and fill in:
 | `CORS_ORIGINS` | No | Comma-separated browser origins allowed to call the API. Default `http://localhost:5173,http://localhost:5174`. Set it when the dev frontend runs on another port or address (for example `npm run dev -- --port 5175`). Not needed in production, which is same-origin behind nginx. |
 | `USDA_API_KEY` | Recommended | [USDA FoodData Central](https://fdc.nal.usda.gov/api-key-signup.html) ingredient search. Without it, USDA lookups fall back to the shared `DEMO_KEY` (~30 requests/hour, 50/day per IP). |
 
+The `AI_*` variables are first-run defaults. Anything you save on the Settings page is stored in the data volume and overrides `.env` on every start, so a rebuild or redeploy never resets your model.
+
 Open Food Facts search and barcode lookup need no key.
 
 The API key, model, and base URL can also be set from the app's **Settings** page, which persists them to `/app/data/ai_settings.env` (the `mise_data` volume), so they survive container redeploys.
