@@ -5,6 +5,8 @@ import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import AiAssistPanel from '../components/AiAssistPanel.jsx'
 import IngredientSearchPanel from '../components/IngredientSearchPanel.jsx'
 import { toTitleCase } from '../utils/text.js'
+import { formatDecimal, parseDecimal } from '../utils/amounts.js'
+import { scaleIngredients, scaleMacroTotals, scalingChangesAmounts } from '../utils/scaling.js'
 import { resolveUploadUrl } from '../utils/uploads.js'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import {
@@ -415,7 +417,12 @@ function RecipeDetail() {
   const [cookbooks, setCookbooks] = useState([])
   const [recipe, setRecipe] = useState(null)
   const [mode, setMode] = useState('per-serving')
+  // Per Serving mode: how many portions the recipe is split into
   const [servings, setServings] = useState(1)
+  // Scale Recipe mode: the multiplier applied to every ingredient amount
+  const [scale, setScale] = useState(1)
+  // What's being typed in the box; null when it isn't being edited
+  const [boxDraft, setBoxDraft] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -462,6 +469,7 @@ function RecipeDetail() {
         setMacros(macroData)
         setRecipe(data)
         setServings(data?.servings ?? 1)
+        setScale(1)
       } catch (requestError) {
         if (!active) {
           return
@@ -513,42 +521,62 @@ function RecipeDetail() {
   const handleModeChange = (nextMode) => {
     setMode(nextMode)
     setServings(recipe?.servings ?? 1)
+    setScale(1)
+    setBoxDraft(null)
   }
+
+  // One box, two meanings: portions in Per Serving mode, a multiplier in Scale Recipe mode.
+  const inScaleMode = mode === 'scale'
+  const boxValue = inScaleMode ? scale : servings
+  const setBoxValue = inScaleMode ? setScale : setServings
+
+  // The stepper moves by 1 and keeps any decimals (1.5 -> 2.5); typing sets any amount.
+  const stepBox = (delta) => {
+    setBoxDraft(null)
+    setBoxValue((current) => {
+      const next = Math.round((current + delta) * 100) / 100
+      return next > 0 ? next : current
+    })
+  }
+
+  const handleBoxInput = (e) => {
+    setBoxDraft(e.target.value)
+    const parsed = parseDecimal(e.target.value)
+    if (parsed !== null) setBoxValue(parsed)
+  }
+
+  // Saved servings are whole numbers, so a fractional portion count is for viewing only.
+  const servingsAreWhole = Number.isInteger(servings)
 
   // Re-pull calculated macros after any change that affects ingredients or servings.
   const refreshMacros = () => {
     getRecipeMacros(id).then(setMacros).catch(() => setMacros(null))
   }
 
-  const ingredientFactor = useMemo(() => {
-    if (!recipe || recipe.servings <= 0) return 1
-    if (mode === 'per-serving') return 1
-    return servings / recipe.servings
-  }, [recipe, mode, servings])
+  const recipeServings = recipe?.servings > 0 ? recipe.servings : 1
+
+  // Scale Recipe mode multiplies every amount (rounded: counts to whole numbers, weights and volumes
+  // to two decimals). Per Serving mode leaves the amounts alone.
+  const scaledAmounts = useMemo(
+    () => scaleIngredients(recipe?.ingredients ?? [], inScaleMode ? scale : 1),
+    [recipe, inScaleMode, scale],
+  )
+  const scaleChangesRecipe = inScaleMode && scalingChangesAmounts(scaledAmounts)
+  const scaledMacros = useMemo(() => scaleMacroTotals(macros, scaledAmounts), [macros, scaledAmounts])
 
   const displayMacros = useMemo(() => {
-    if (!macros || macros.matched_count === 0) return null
-    if (macroView === 'total') {
-      const factor = mode === 'scale' ? ingredientFactor : 1
-      return {
-        calories: macros.total.calories * factor,
-        protein: macros.total.protein * factor,
-        carbs: macros.total.carbs * factor,
-        fat: macros.total.fat * factor,
-      }
-    }
-    // Per-serving: in scale mode anchor to original servings (scaling doesn't change per-serving value);
-    // in per-serving mode use the user-controlled servings stepper
-    const divisor = mode === 'scale'
-      ? (recipe?.servings > 0 ? recipe.servings : 1)
-      : (servings > 0 ? servings : 1)
+    if (!macros || macros.matched_count === 0 || !scaledMacros) return null
+    // Scale mode changes the total and keeps the portions; Per Serving mode keeps the total and
+    // changes how many portions it is split into. Per serving is always total / portions.
+    const portions = inScaleMode ? recipeServings : (servings > 0 ? servings : 1)
+    const divisor = macroView === 'total' ? 1 : portions
     return {
-      calories: macros.total.calories / divisor,
-      protein: macros.total.protein / divisor,
-      carbs: macros.total.carbs / divisor,
-      fat: macros.total.fat / divisor,
+      calories: scaledMacros.calories / divisor,
+      protein: scaledMacros.protein / divisor,
+      carbs: scaledMacros.carbs / divisor,
+      fat: scaledMacros.fat / divisor,
     }
-  }, [macros, macroView, mode, ingredientFactor, servings, recipe?.servings])
+  }, [macros, macroView, scaledMacros, inScaleMode, recipeServings, servings])
 
   const scaledIngredients = useMemo(() => {
     if (!recipe) return []
@@ -556,9 +584,9 @@ function RecipeDetail() {
     for (const entry of (macros?.breakdown ?? [])) {
       if (entry.recipe_ingredient_id) bdMap[entry.recipe_ingredient_id] = entry
     }
-    return (recipe.ingredients ?? []).map((ingredient) => ({
+    return (recipe.ingredients ?? []).map((ingredient, index) => ({
       ...ingredient,
-      scaledAmount: formatScaledAmount(Number(ingredient.amount) * ingredientFactor),
+      scaledAmount: formatScaledAmount(scaledAmounts[index]?.newAmount ?? Number(ingredient.amount)),
       displayName:
         ingredient.ingredient_id && ingredientMap[ingredient.ingredient_id]
           ? ingredientMap[ingredient.ingredient_id]
@@ -566,20 +594,22 @@ function RecipeDetail() {
       linkedToDb: Boolean(ingredient.ingredient_id),
       breakdown: bdMap[ingredient.id] ?? null,
     }))
-  }, [recipe, ingredientFactor, ingredientMap, macros])
+  }, [recipe, scaledAmounts, ingredientMap, macros])
 
+  // Scale mode: the scaled amounts overwrite the recipe. Servings are not touched, so per-serving
+  // macros scale along with the total.
   const handleSaveScale = async () => {
-    if (!recipe || ingredientFactor === 1) return
+    if (!recipe || !scaleChangesRecipe) return
     setSavingScale(true)
     try {
-      const scaledIngs = (recipe.ingredients ?? []).map((ing) => {
-        const raw = Number(ing.amount) * ingredientFactor
-        const rounded = Math.round(raw * 100) / 100
-        return { ...ing, amount: rounded }
-      })
-      const updated = await updateRecipe(id, { servings, ingredients: scaledIngs })
+      const scaledIngs = (recipe.ingredients ?? []).map((ing, index) => ({
+        ...ing,
+        amount: scaledAmounts[index].newAmount,
+      }))
+      const updated = await updateRecipe(id, { ingredients: scaledIngs })
       setRecipe(updated)
-      setServings(updated.servings)
+      setScale(1)
+      setBoxDraft(null)
       refreshMacros()
     } catch (err) {
       console.error('Failed to save scaled recipe:', err)
@@ -592,7 +622,7 @@ function RecipeDetail() {
   // Per-serving mode: persist only the serving count. Ingredient amounts are untouched —
   // the same dish, cut into more or fewer portions, so per-serving macros shift.
   const handleSaveServings = async () => {
-    if (!recipe || servings === recipe.servings) return
+    if (!recipe || servings === recipe.servings || !servingsAreWhole) return
     setSavingScale(true)
     try {
       const updated = await updateRecipe(id, { servings })
@@ -635,6 +665,7 @@ function RecipeDetail() {
   const handleAssistApplied = (updated) => {
     setRecipe(updated)
     setServings(updated?.servings ?? 1)
+    setScale(1)
     refreshMacros()
   }
 
@@ -666,6 +697,7 @@ function RecipeDetail() {
       const updated = await updateRecipe(id, payload)
       setRecipe(updated)
       setServings(updated?.servings ?? 1)
+      setScale(1)
       setEditing(false)
       setDraft(null)
       refreshMacros()
@@ -1156,27 +1188,37 @@ function RecipeDetail() {
           <div className="flex items-center gap-2 border-t border-theme pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
             <button
               type="button"
-              onClick={() => setServings((current) => Math.max(1, current - 1))}
-              className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              aria-label="Decrease servings"
+              onClick={() => stepBox(-1)}
+              disabled={boxValue <= 1}
+              className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white disabled:opacity-40 disabled:hover:border-mise-800 disabled:hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              aria-label={inScaleMode ? 'Decrease scaling' : 'Decrease servings'}
             >
               −
             </button>
-            <p className="min-w-8 text-center text-sm font-semibold text-mise-300" aria-live="polite">
-              {servings}
-            </p>
+            <input
+              type="text"
+              inputMode="decimal"
+              aria-label={inScaleMode ? 'Scaling' : 'Servings'}
+              aria-invalid={boxDraft !== null && parseDecimal(boxDraft) === null}
+              value={boxDraft ?? formatDecimal(boxValue)}
+              onChange={handleBoxInput}
+              onFocus={(e) => e.target.select()}
+              onBlur={() => setBoxDraft(null)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              className="h-7 w-14 rounded border border-mise-800 bg-mise-950 text-center text-sm font-semibold text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember aria-[invalid=true]:border-rose-500/60"
+            />
             <button
               type="button"
-              onClick={() => setServings((current) => current + 1)}
+              onClick={() => stepBox(1)}
               className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              aria-label="Increase servings"
+              aria-label={inScaleMode ? 'Increase scaling' : 'Increase servings'}
             >
               +
             </button>
-            <p className="text-xs text-mise-500">servings</p>
+            <p className="text-xs text-mise-500">{inScaleMode ? 'scaling' : 'servings'}</p>
           </div>
 
-          {servings !== recipe.servings && (
+          {(inScaleMode ? scaleChangesRecipe : servings !== recipe.servings && servingsAreWhole) && (
             <button
               type="button"
               onClick={mode === 'scale' ? handleSaveScale : handleSaveServings}
@@ -1185,16 +1227,24 @@ function RecipeDetail() {
             >
               {savingScale
                 ? 'Saving…'
-                : mode === 'scale'
-                  ? `Rescale to ${servings} servings`
+                : inScaleMode
+                  ? `Rescale recipe ×${formatDecimal(scale)}`
                   : `Save as ${servings} servings`}
             </button>
           )}
         </div>
+        {inScaleMode && scaleChangesRecipe && scaledMacros && macros?.matched_count > 0 && (
+          <p className="mt-2.5 text-xs text-mise-400" aria-live="polite">
+            {Math.round(macros.total.calories / recipeServings)} → {Math.round(scaledMacros.calories / recipeServings)} kcal per serving
+            {' · '}
+            {Math.round(macros.total.calories)} → {Math.round(scaledMacros.calories)} total
+          </p>
+        )}
         <p className="mt-2.5 text-[11px] leading-snug text-mise-600">
-          {mode === 'scale'
-            ? 'Scale Recipe adjusts every ingredient amount to the new serving count.'
-            : 'Per Serving splits the recipe into more or fewer portions — ingredient amounts don’t change, only the per-serving macros.'}
+          {inScaleMode
+            ? `Multiplies every ingredient amount. Servings stay at ${recipe.servings}, so calories and macros per serving scale too. Rescale saves the new amounts over this recipe.`
+            : 'Splits the recipe into more or fewer portions. Ingredient amounts don’t change, only the per-serving macros.'}
+          {!inScaleMode && !servingsAreWhole && ' Fractional servings are for viewing only; saving needs a whole number.'}
         </p>
         </div>
       )}
