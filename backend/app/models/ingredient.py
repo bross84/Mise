@@ -1,6 +1,6 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, Integer, String, Float
 from app.database import Base
+from app.models.timestamps import UTCDateTime, utcnow
 
 
 class Ingredient(Base):
@@ -17,4 +17,4 @@ class Ingredient(Base):
     barcode = Column(String, nullable=True)
     serving_grams = Column(Float, nullable=True)
     serving_quantity = Column(Integer, default=1, server_default="1", nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=utcnow)

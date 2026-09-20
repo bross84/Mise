@@ -1,6 +1,6 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, JSON
+from sqlalchemy import Column, Integer, String, JSON
 from app.database import Base
+from app.models.timestamps import UTCDateTime, utcnow
 
 
 class Recipe(Base):
@@ -19,5 +19,5 @@ class Recipe(Base):
     rating = Column(Integer, nullable=True)
     thumbs = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=utcnow)
+    updated_at = Column(UTCDateTime, default=utcnow, onupdate=utcnow)

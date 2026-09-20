@@ -1,6 +1,6 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, DateTime
+from sqlalchemy import Column, Integer
 from app.database import Base
+from app.models.timestamps import UTCDateTime, utcnow
 
 
 class MealPlanItem(Base):
@@ -8,4 +8,4 @@ class MealPlanItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     recipe_id = Column(Integer, nullable=False, index=True)
-    added_at = Column(DateTime, default=datetime.utcnow)
+    added_at = Column(UTCDateTime, default=utcnow)

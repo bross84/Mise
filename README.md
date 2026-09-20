@@ -108,6 +108,7 @@ Copy `.env.example` to `.env` in the project root (git-ignored) and fill in:
 | `AI_API_KEY` | Yes, for AI features | API key for any OpenAI-compatible provider. `OPENROUTER_API_KEY` is still read as a fallback. |
 | `AI_MODEL` | No | Model id. Default `deepseek/deepseek-chat`. |
 | `AI_BASE_URL` | No | API base URL. Default `https://openrouter.ai/api/v1`. Point it at OpenAI, Groq, a local Ollama server, etc. |
+| `CORS_ORIGINS` | No | Comma-separated browser origins allowed to call the API. Default `http://localhost:5173,http://localhost:5174`. Set it when the dev frontend runs on another port or address (for example `npm run dev -- --port 5175`). Not needed in production, which is same-origin behind nginx. |
 | `USDA_API_KEY` | Recommended | [USDA FoodData Central](https://fdc.nal.usda.gov/api-key-signup.html) ingredient search. Without it, USDA lookups fall back to the shared `DEMO_KEY` (~30 requests/hour, 50/day per IP). |
 
 Open Food Facts search and barcode lookup need no key.

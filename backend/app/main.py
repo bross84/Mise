@@ -1,5 +1,5 @@
+import os
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.database import create_tables, engine, get_db
 from app.models.recipe import Recipe
+from app.models.timestamps import utcnow
 from app.routers import recipes, ingredients, settings, share, meal_plan
 from app.routers.settings import ENV_FILE as AI_SETTINGS_ENV_FILE
 from app.services.ai import AIService
@@ -24,11 +25,25 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / '.env')
 load_dotenv(AI_SETTINGS_ENV_FILE)
 
+DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:5174"]
+
+
+def _cors_origins() -> list[str]:
+    """Browser origins allowed to call the API, from CORS_ORIGINS (comma-separated).
+
+    Only needed when the frontend is served from a different origin than the API, i.e. a Vite
+    dev server; production is same-origin behind nginx. A blank or unset value keeps the
+    defaults, and trailing slashes are dropped because browsers send origins without one.
+    """
+    origins = [o.strip().rstrip("/") for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+    return origins or list(DEFAULT_CORS_ORIGINS)
+
+
 app = FastAPI(title="Mise API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -123,7 +138,7 @@ async def upload_recipe_image(
     dest.write_bytes(contents)
 
     recipe.image_url = f'/uploads/{filename}'
-    recipe.updated_at = datetime.utcnow()
+    recipe.updated_at = utcnow()
     db.commit()
     db.refresh(recipe)
 
@@ -141,7 +156,7 @@ def delete_recipe_image(recipe_id: int, db: Session = Depends(get_db)):
         old_path.unlink(missing_ok=True)
 
     recipe.image_url = None
-    recipe.updated_at = datetime.utcnow()
+    recipe.updated_at = utcnow()
     db.commit()
 
     return RecipeImageResponse(image_url=None)

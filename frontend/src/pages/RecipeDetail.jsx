@@ -5,6 +5,7 @@ import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import AiAssistPanel from '../components/AiAssistPanel.jsx'
 import IngredientSearchPanel from '../components/IngredientSearchPanel.jsx'
 import { toTitleCase } from '../utils/text.js'
+import { resolveUploadUrl } from '../utils/uploads.js'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import {
   deleteRecipe,
@@ -118,9 +119,7 @@ function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
     }
   }
 
-  const resolvedUrl = imageUrl?.startsWith('/uploads/')
-    ? (import.meta.env.VITE_API_URL?.startsWith('/') ? imageUrl : `http://localhost:8001${imageUrl}`)
-    : imageUrl
+  const resolvedUrl = resolveUploadUrl(imageUrl)
 
   return (
     <div className="group relative mt-6 h-[240px] w-full overflow-hidden rounded border border-theme bg-mise-900">
@@ -582,7 +581,8 @@ function RecipeDetail() {
       setRecipe(updated)
       setServings(updated.servings)
       refreshMacros()
-    } catch {
+    } catch (err) {
+      console.error('Failed to save scaled recipe:', err)
       window.alert('Failed to save scaled recipe.')
     } finally {
       setSavingScale(false)
@@ -599,7 +599,8 @@ function RecipeDetail() {
       setRecipe(updated)
       setServings(updated.servings)
       refreshMacros()
-    } catch {
+    } catch (err) {
+      console.error('Failed to save servings:', err)
       window.alert('Failed to save servings.')
     } finally {
       setSavingScale(false)
@@ -798,7 +799,8 @@ function RecipeDetail() {
     try {
       await deleteRecipe(id)
       navigate('/')
-    } catch {
+    } catch (err) {
+      console.error('Failed to delete recipe:', err)
       window.alert('Failed to delete recipe. Please try again.')
     }
   }
@@ -816,7 +818,8 @@ function RecipeDetail() {
       copyConfirmationTimerRef.current = window.setTimeout(() => {
         setCopyConfirmationVisible(false)
       }, 2000)
-    } catch {
+    } catch (err) {
+      console.error('Failed to copy recipe link:', err)
       window.alert('Failed to copy recipe link. Please try again.')
     }
   }

@@ -11,7 +11,9 @@ export default defineConfig({
       host: 'localhost',
     },
     watch: {
-      usePolling: true,
+      // Docker bind mounts from a Windows/macOS host don't deliver file events, so
+      // docker-compose.yml sets CHOKIDAR_USEPOLLING=true. Native `npm run dev` doesn't need it.
+      usePolling: ['1', 'true'].includes(process.env.CHOKIDAR_USEPOLLING ?? ''),
     },
   },
 })

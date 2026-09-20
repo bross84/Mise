@@ -6,11 +6,15 @@ const MealPlanContext = createContext(null)
 export function MealPlanProvider({ children }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     getMealPlan()
       .then(setItems)
-      .catch(() => {})
+      .catch((err) => {
+        console.error('Failed to load meal plan:', err)
+        setLoadError(true)
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -33,7 +37,7 @@ export function MealPlanProvider({ children }) {
   }, [])
 
   return (
-    <MealPlanContext.Provider value={{ items, recipeIds, loading, add, remove, clear }}>
+    <MealPlanContext.Provider value={{ items, recipeIds, loading, loadError, add, remove, clear }}>
       {children}
     </MealPlanContext.Provider>
   )
