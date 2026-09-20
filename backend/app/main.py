@@ -18,12 +18,20 @@ from app.routers.settings import ENV_FILE as AI_SETTINGS_ENV_FILE
 from app.services.ai import AIService
 import app.models  # noqa: F401 — ensures models are registered before create_all
 
-# Load environment variables from the project root first, then the persisted AI settings
-# file (mise_data volume — survives redeploys, unlike anything in the container's own
-# writable layer).
+def load_environment(project_env: Path, settings_env: Path) -> None:
+    """Load .env defaults, then the AI settings saved from the Settings page on top of them.
+
+    The Settings file lives in the mise_data volume, so it survives redeploys. It must OVERRIDE
+    the environment: docker compose injects .env into the container as real env vars, and
+    load_dotenv() never replaces a variable that is already set, so without override=True a
+    stray AI_MODEL= line in .env would silently beat the model chosen in Settings on every restart.
+    """
+    load_dotenv(project_env)
+    load_dotenv(settings_env, override=True)
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(PROJECT_ROOT / '.env')
-load_dotenv(AI_SETTINGS_ENV_FILE)
+load_environment(PROJECT_ROOT / '.env', AI_SETTINGS_ENV_FILE)
 
 DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:5174"]
 
