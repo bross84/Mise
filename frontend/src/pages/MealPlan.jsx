@@ -3,36 +3,26 @@ import { Link } from 'react-router-dom'
 import { ClipboardList, ShoppingCart, Trash2, X } from 'lucide-react'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import { generateShoppingList } from '../api/client.js'
+import RecipeImage from '../components/RecipeImage.jsx'
 import ShoppingListModal from '../components/ShoppingListModal.jsx'
+import { resolveUploadUrl } from '../utils/uploads.js'
 
-function resolveImageUrl(imageUrl) {
-  if (!imageUrl) return null
-  if (!imageUrl.startsWith('/uploads/')) return imageUrl
-  return import.meta.env.VITE_API_URL?.startsWith('/') ? imageUrl : `http://localhost:8001${imageUrl}`
-}
-
-function RecipeThumbnail({ imageUrl, title }) {
-  const resolved = resolveImageUrl(imageUrl)
-  if (resolved) {
-    return (
-      <img
-        src={resolved}
-        alt=""
-        className="h-full w-full object-cover"
-        loading="lazy"
-        onError={(e) => { e.currentTarget.style.display = 'none' }}
-      />
-    )
-  }
+function RecipeThumbnail({ imageUrl }) {
   return (
-    <div className="flex h-full w-full items-center justify-center text-xl text-mise-600">
-      🍽️
-    </div>
+    <RecipeImage
+      src={resolveUploadUrl(imageUrl)}
+      className="h-full w-full object-cover"
+      fallback={
+        <div className="flex h-full w-full items-center justify-center text-xl text-mise-600">
+          🍽️
+        </div>
+      }
+    />
   )
 }
 
 export default function MealPlan() {
-  const { items, remove, clear, loading } = useMealPlan()
+  const { items, remove, clear, loading, loadError } = useMealPlan()
   const [removing, setRemoving] = useState(null)
   const [clearing, setClearing] = useState(false)
   const [shoppingListText, setShoppingListText] = useState(null)
@@ -43,7 +33,8 @@ export default function MealPlan() {
     setRemoving(itemId)
     try {
       await remove(itemId)
-    } catch {
+    } catch (err) {
+      console.error('Failed to remove from meal plan:', err)
       window.alert('Failed to remove from meal plan.')
     } finally {
       setRemoving(null)
@@ -55,7 +46,8 @@ export default function MealPlan() {
     setClearing(true)
     try {
       await clear()
-    } catch {
+    } catch (err) {
+      console.error('Failed to clear meal plan:', err)
       window.alert('Failed to clear meal plan.')
     } finally {
       setClearing(false)
@@ -67,7 +59,8 @@ export default function MealPlan() {
     try {
       const text = await generateShoppingList([recipeId])
       setShoppingListText(text)
-    } catch {
+    } catch (err) {
+      console.error('Failed to generate shopping list:', err)
       window.alert('Failed to generate shopping list.')
     } finally {
       setGeneratingForId(null)
@@ -81,7 +74,8 @@ export default function MealPlan() {
       const recipeIds = items.map((i) => i.recipe_id)
       const text = await generateShoppingList(recipeIds)
       setShoppingListText(text)
-    } catch {
+    } catch (err) {
+      console.error('Failed to generate shopping list:', err)
       window.alert('Failed to generate shopping list.')
     } finally {
       setGeneratingList(false)
@@ -130,6 +124,10 @@ export default function MealPlan() {
         <div className="mt-8 border border-dashed border-mise-800 bg-mise-900/50 p-8 text-center text-mise-500">
           Loading…
         </div>
+      ) : loadError ? (
+        <div className="mt-8 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          Couldn’t load your meal plan. Reload the page to try again.
+        </div>
       ) : items.length === 0 ? (
         <div className="mt-8 flex flex-col items-center gap-3 border border-dashed border-mise-800 bg-mise-900/50 p-10 text-center">
           <ClipboardList size={32} className="text-mise-700" />
@@ -148,7 +146,7 @@ export default function MealPlan() {
               className="flex items-center gap-3 rounded border border-mise-800 bg-mise-900 px-3 py-2.5 transition hover:border-mise-700"
             >
               <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded border border-mise-800 bg-mise-800">
-                <RecipeThumbnail imageUrl={item.image_url} title={item.title} />
+                <RecipeThumbnail imageUrl={item.image_url} />
               </div>
 
               <Link

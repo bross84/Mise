@@ -4,6 +4,8 @@ import { CalendarCheck, CalendarPlus, Download, Grid2X2, LayoutGrid, LayoutList,
 import { deleteRecipe, generateShoppingList, getRecipes, importMarkdown, parseRecipe, updateRecipe } from '../api/client.js'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import ShoppingListModal from '../components/ShoppingListModal.jsx'
+import RecipeImage from '../components/RecipeImage.jsx'
+import { resolveUploadUrl } from '../utils/uploads.js'
 
 const tagHeaderTheme = {
   beef: 'from-rose-900/60 via-slate-900 to-slate-950 bg-rose-900/30',
@@ -35,12 +37,6 @@ const SORT_OPTIONS = [
 
 const VIEW_KEY = 'mise-recipe-view'
 
-function resolveImageUrl(imageUrl) {
-  if (!imageUrl) return null
-  if (!imageUrl.startsWith('/uploads/')) return imageUrl
-  return import.meta.env.VITE_API_URL?.startsWith('/') ? imageUrl : `http://localhost:8001${imageUrl}`
-}
-
 // ── Large card (existing style) ────────────────────────────────────────────────
 
 function MealPlanButton({ recipeId, size = 14, className = '' }) {
@@ -70,7 +66,7 @@ function MealPlanButton({ recipeId, size = 14, className = '' }) {
 }
 
 function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selected, onToggleSelect }) {
-  const imageUrl = resolveImageUrl(recipe.image_url)
+  const imageUrl = resolveUploadUrl(recipe.image_url)
   const tags = Array.isArray(recipe.tags) ? recipe.tags : []
   const ingredientCount = Array.isArray(recipe.ingredients) ? recipe.ingredients.length : 0
   const headerTheme = getHeaderTheme(recipe.tags?.[0])
@@ -93,13 +89,15 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
       ].join(' ')}
     >
       <div className="relative h-40 w-full border-b border-mise-800 bg-mise-900" aria-hidden="true">
-        {imageUrl ? (
-          <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => {}} />
-        ) : (
-          <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-4xl text-mise-500`}>
-            <span aria-hidden="true">🍽️</span>
-          </div>
-        )}
+        <RecipeImage
+          src={imageUrl}
+          className="h-full w-full object-cover"
+          fallback={
+            <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-4xl text-mise-500`}>
+              <span aria-hidden="true">🍽️</span>
+            </div>
+          }
+        />
 
         {selectMode && (
           <div className="absolute left-2 top-2">
@@ -191,7 +189,7 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
 // ── Small card ─────────────────────────────────────────────────────────────────
 
 function SmallCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selected, onToggleSelect }) {
-  const imageUrl = resolveImageUrl(recipe.image_url)
+  const imageUrl = resolveUploadUrl(recipe.image_url)
   const headerTheme = getHeaderTheme(recipe.tags?.[0])
 
   const handleCardClick = () => {
@@ -212,13 +210,15 @@ function SmallCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
       ].join(' ')}
     >
       <div className="relative h-24 w-full border-b border-mise-800 bg-mise-900" aria-hidden="true">
-        {imageUrl ? (
-          <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => {}} />
-        ) : (
-          <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-2xl text-mise-500`}>
-            <span aria-hidden="true">🍽️</span>
-          </div>
-        )}
+        <RecipeImage
+          src={imageUrl}
+          className="h-full w-full object-cover"
+          fallback={
+            <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-2xl text-mise-500`}>
+              <span aria-hidden="true">🍽️</span>
+            </div>
+          }
+        />
         {selectMode && (
           <div className="absolute left-1.5 top-1.5">
             <span className={[
@@ -273,7 +273,7 @@ function SmallCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
 // ── List row ───────────────────────────────────────────────────────────────────
 
 function ListRow({ recipe, rating, onOpen, onRate, onDelete, selectMode, selected, onToggleSelect }) {
-  const imageUrl = resolveImageUrl(recipe.image_url)
+  const imageUrl = resolveUploadUrl(recipe.image_url)
   const headerTheme = getHeaderTheme(recipe.tags?.[0])
   const tags = Array.isArray(recipe.tags) ? recipe.tags : []
 
@@ -302,13 +302,15 @@ function ListRow({ recipe, rating, onOpen, onRate, onDelete, selectMode, selecte
       )}
 
       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded border border-mise-800" aria-hidden="true">
-        {imageUrl ? (
-          <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => {}} />
-        ) : (
-          <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-lg`}>
-            <span aria-hidden="true">🍽️</span>
-          </div>
-        )}
+        <RecipeImage
+          src={imageUrl}
+          className="h-full w-full object-cover"
+          fallback={
+            <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${headerTheme} text-lg`}>
+              <span aria-hidden="true">🍽️</span>
+            </div>
+          }
+        />
       </div>
 
       <div className="min-w-0 flex-1">
@@ -560,7 +562,8 @@ function RecipeBrowser() {
       await deleteRecipe(recipe.id)
       setRecipes((prev) => prev.filter((r) => r.id !== recipe.id))
       setSelectedIds((prev) => { const next = new Set(prev); next.delete(recipe.id); return next })
-    } catch {
+    } catch (err) {
+      console.error('Failed to delete recipe:', err)
       window.alert('Failed to delete recipe. Please try again.')
     }
   }
@@ -571,7 +574,8 @@ function RecipeBrowser() {
     try {
       const text = await generateShoppingList([...selectedIds])
       setShoppingListText(text)
-    } catch {
+    } catch (err) {
+      console.error('Failed to generate shopping list:', err)
       window.alert('Failed to generate shopping list. Please try again.')
     } finally {
       setGeneratingList(false)
@@ -588,7 +592,8 @@ function RecipeBrowser() {
       setRecipes((prev) => prev.filter((r) => !selectedIds.has(r.id)))
       setSelectedIds(new Set())
       setSelectMode(false)
-    } catch {
+    } catch (err) {
+      console.error('Some recipes could not be deleted:', err)
       window.alert('Some recipes could not be deleted. Please try again.')
     } finally {
       setBatchDeleting(false)
