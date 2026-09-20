@@ -5,6 +5,7 @@
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mise</title>
+    <meta name="description" content="Personal recipe manager with serving scaling, per-recipe macro calculation, and AI-assisted recipe creation and editing." />
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest.json" />
@@ -23,11 +24,13 @@
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem('mise-theme')
-          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-          var dark = stored === 'dark' || ((!stored || stored === 'system') && prefersDark)
+          const stored = localStorage.getItem('mise-theme')
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          const dark = stored === 'dark' || ((!stored || stored === 'system') && prefersDark)
           if (dark) document.documentElement.classList.add('dark')
-        } catch (e) {}
+        } catch (e) {
+          // Storage can be blocked (private mode, disabled site data). Keep the default theme.
+        }
       })()
     </script>
   </head>

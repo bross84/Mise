@@ -7,6 +7,9 @@ services:
       - /app/node_modules
     ports:
       - "5173:5173"
+    environment:
+      # Bind mounts from a Windows/macOS host don't deliver file-change events (see vite.config.js)
+      CHOKIDAR_USEPOLLING: "true"
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
 
   backend:
