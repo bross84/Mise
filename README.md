@@ -130,7 +130,7 @@ SQLite is created automatically at `backend/data/mise.db`; lightweight column mi
 Pushing to `main` builds and publishes `mise-backend` and `mise-frontend` images to GHCR (the `:latest` tag). Deploy with a populated `.env` in the working directory:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
 
 The production frontend is served by nginx on port 8080.
@@ -138,8 +138,8 @@ The production frontend is served by nginx on port 8080.
 To update a running server once the "Build & Publish Docker Images" workflow has finished:
 
 ```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose pull
+docker compose up -d
 ```
 
 No `git pull` is needed — the app code ships in the images. SQLite column migrations run automatically on backend startup, and the `mise_data` / `mise_uploads` volumes persist across updates.

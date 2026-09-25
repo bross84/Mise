@@ -1,26 +1,21 @@
 services:
-  frontend:
-    image: node:24-alpine
-    working_dir: /app
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    ports:
-      - "5173:5173"
-    environment:
-      # Bind mounts from a Windows/macOS host don't deliver file-change events (see vite.config.js)
-      CHOKIDAR_USEPOLLING: "true"
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
-
   backend:
-    build: ./backend
+    image: ghcr.io/bross84/mise-backend:latest
     volumes:
-      - ./backend:/app
       - mise_data:/app/data
-    ports:
-      - "8001:8001"
+      - mise_uploads:/app/uploads
     env_file:
       - .env
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/bross84/mise-frontend:latest
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   mise_data:
+  mise_uploads:
