@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { createRecipe, getCookbooks, getIngredients, matchIngredients, parseIngredients } from '../api/client.js'
 import { MarkdownField } from '../components/MarkdownText.jsx'
 import IngredientSearchPanel from '../components/IngredientSearchPanel.jsx'
+import ImportRecipeModal from '../components/ImportRecipeModal.jsx'
 import { toTitleCase } from '../utils/text.js'
 
 const inputCls =
@@ -187,6 +188,9 @@ export default function AddRecipe() {
   const [cookbook, setCookbook] = useState('')
   const [cookbooks, setCookbooks] = useState([])
 
+  // URL/markdown import
+  const [showImport, setShowImport] = useState(false)
+
   // AI parsing
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState('')
@@ -302,6 +306,17 @@ export default function AddRecipe() {
     }
   }
 
+  const handleImported = (data) => {
+    setShowImport(false)
+    setTitle(data.title ?? '')
+    setServingsStr(String(data.servings ?? 1))
+    setIngredientsText(data.ingredients_text ?? '')
+    setInstructions(data.instructions ?? '')
+    setNotes(data.notes ?? '')
+    setTagsText((data.tags ?? []).join(', '))
+    setSourceUrl(data.source_url ?? '')
+  }
+
   const handleStartOver = () => {
     setStage('input')
     setTitle('')
@@ -367,12 +382,18 @@ export default function AddRecipe() {
               : 'Fix any unmatched ingredients below, then save.'}
           </p>
         </div>
-        {stage === 'review' && (
+        {stage === 'review' ? (
           <button type="button" onClick={handleStartOver} className={`shrink-0 ${secondaryBtnCls}`}>
             Start Over
           </button>
+        ) : (
+          <button type="button" onClick={() => setShowImport(true)} className={`shrink-0 ${secondaryBtnCls}`}>
+            Import from URL
+          </button>
         )}
       </header>
+
+      {showImport && <ImportRecipeModal onClose={() => setShowImport(false)} onImported={handleImported} />}
 
       {(parseError || saveError) && (
         <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
