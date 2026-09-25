@@ -29,6 +29,20 @@ const emptyCustomForm = { name: '', barcode: '', ...emptyNutritionForm }
 // Ties a calorie warning to the result it came from, so it never shows on a different list.
 const resultKey = (result) => `${result.source}:${result.source_id ?? result.name}`
 
+// A plain target="_blank" link can't strip the toolbar/menubar/location bar — only
+// window.open's feature string can, so the verify-nutrition search opens as a small popup.
+function openMinimalPopup(url) {
+  const width = 480
+  const height = 720
+  const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2)
+  const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2)
+  window.open(
+    url,
+    'mise-verify-nutrition',
+    `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes`,
+  )
+}
+
 /**
  * Search local/USDA/Open Food Facts ingredients, or add one by barcode or by hand.
  * `onSelect(saved)` receives `{ id, name }` for an existing local match or the full
@@ -364,6 +378,19 @@ export default function IngredientSearchPanel({ ingredientName, onSelect, onClos
                         <a href={r.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-mise-600 hover:text-mise-400" title="View source">
                           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                         </a>
+                      )}
+                      {(r.source === 'usda' || r.source === 'openfoodfacts') && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openMinimalPopup(`https://www.startpage.com/sp/search?query=${encodeURIComponent(`${r.name} nutrition facts`)}`)
+                          }}
+                          className="text-mise-600 hover:text-mise-400"
+                          title="Verify nutrition facts"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        </button>
                       )}
                       {r.source === 'usda' && (
                         <span className="rounded-full border border-sky-500/40 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-200">USDA</span>
