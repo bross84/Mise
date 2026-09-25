@@ -213,14 +213,41 @@ Rules:
   drained, softened, to taste, room temperature, plus more for serving, low sodium,
   canned, packed) — keep the whole line as one ingredient in that case.
 
+Standardizing the "name" field:
+- Title-Case every word in "name" (capitalize the first letter of every word, uniformly —
+  do not lowercase minor words like "of"/"and"/"with").
+- If the source name is already simple and clear (e.g. "flour", "eggs", "salt"), just
+  Title-Case it. Do not restructure or add anything to a name that's already clean.
+- If the source name is verbose or export-style (e.g. pulled from a nutrition-tracking app),
+  rewrite it into "Primary Ingredient, Qualifier" form and drop generic marketing/filler
+  words that carry no nutritional meaning: natural, all natural, original, fresh, style,
+  classic, premium, real, ultra, simply, a leading "the", and "blend" when it's pure filler
+  (not part of a real product name like "seasoning blend").
+- NEVER drop or move a brand/product proper noun (e.g. "The Laughing Cow", "Great Value",
+  "Organic Valley") — leave it exactly where it appears in the source name. Whether a brand
+  matters is the cook's call, not yours.
+- KEEP every word that affects nutrition or identification: fat %/lean % (e.g. "93% Lean 7%
+  Fat"), fat free, reduced fat, low fat, reduced sodium, boneless, skinless, raw, cooked,
+  canned, dried, ground, shredded, diced, sliced, minced, grated, whole, whole wheat, whole
+  grain, skim, part-skim, nonfat, 1%/2% fat, unsweetened, sweetened, light, extra virgin,
+  cage-free, wild caught.
+
 Examples:
+  "Beef Ground 93% Lean 7% Fat Raw" -> "Ground Beef, 93% Lean 7% Fat"
+  "Natural Shredded Cheese Mozzarella Fat Free" -> "Mozzarella Cheese, Shredded, Fat Free"
+  "100% Grated Parmesan Original Cheese" -> "Parmesan Cheese, Grated"
+  "Cajun Style Andouille Smoked Sausage" -> "Andouille Sausage, Smoked, Cajun"
+  "Fresh All Natural Boneless Skinless Chicken Breasts With Rib Meat Cooked" ->
+    "Chicken Breasts, Boneless, Skinless, With Rib Meat, Cooked"
+  "The Laughing Cow Original Spreadable Cheese Wedges" ->
+    "The Laughing Cow Spreadable Cheese Wedges" (brand kept in place, "Original" dropped)
   "10g salt, black pepper, garlic powder" ->
-    [{"raw":"10g salt, black pepper, garlic powder","name":"salt","amount":"10","unit":"g","group_name":null},
-     {"raw":"10g salt, black pepper, garlic powder","name":"black pepper","amount":"10","unit":"g","group_name":null},
-     {"raw":"10g salt, black pepper, garlic powder","name":"garlic powder","amount":"10","unit":"g","group_name":null}]
+    [{"raw":"10g salt, black pepper, garlic powder","name":"Salt","amount":"10","unit":"g","group_name":null},
+     {"raw":"10g salt, black pepper, garlic powder","name":"Black Pepper","amount":"10","unit":"g","group_name":null},
+     {"raw":"10g salt, black pepper, garlic powder","name":"Garlic Powder","amount":"10","unit":"g","group_name":null}]
   "1 tsp each: oregano, basil, thyme" -> three objects, each amount "1" unit "tsp"
-  "2 tomatoes, diced" -> one object: name "tomatoes", amount "2", unit null
-  "chicken broth, low sodium" -> one object: name "chicken broth, low sodium", amount null, unit null
+  "2 tomatoes, diced" -> one object: name "Tomatoes, Diced", amount "2", unit null
+  "chicken broth, low sodium" -> one object: name "Chicken Broth, Low Sodium", amount null, unit null
 """
 
 

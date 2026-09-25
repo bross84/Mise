@@ -14,6 +14,12 @@ from app.services import nutrition
 router = APIRouter(prefix="/api/ingredients", tags=["ingredients"])
 
 
+def _title_case(name: str) -> str:
+    """Capitalize the first letter of each space-separated word, leaving the rest of each
+    word untouched (so "hellmann's" -> "Hellmann's", not "Hellmann'S" like str.title())."""
+    return " ".join(word[:1].upper() + word[1:] for word in name.split(" "))
+
+
 class SearchResult(BaseModel):
     """One search hit. Macros are always per 100 g; they are None when the source did not
     provide one complete set (see `incomplete_reason`) and the food needs manual entry."""
@@ -504,6 +510,7 @@ def _convert_per_serving(values: dict, serving_grams: float | None) -> dict:
 
 @router.post("", response_model=IngredientResponse, status_code=201)
 def create_ingredient(data: IngredientCreate, db: Session = Depends(get_db)):
+    data.name = _title_case(data.name.strip())
     existing = db.query(Ingredient).filter(Ingredient.name.ilike(data.name)).first()
     if existing:
         # Idempotent update: preserve existing record but backfill barcode when provided
@@ -543,6 +550,8 @@ def update_ingredient(ingredient_id: int, data: IngredientUpdate, db: Session = 
     changes = data.model_dump(exclude_unset=True)
     basis = changes.pop("nutrition_basis", None)
     override = changes.pop("override_calorie_check", False)
+    if changes.get("name"):
+        changes["name"] = _title_case(changes["name"].strip())
 
     if basis == "per_serving":
         supplied = {key: changes.get(key) for key in nutrition.MACRO_KEYS}
