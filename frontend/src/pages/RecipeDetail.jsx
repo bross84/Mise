@@ -36,12 +36,12 @@ function formatTimerLabel(timerSeconds) {
   return `${Math.round(timerSeconds / 60)} min`
 }
 
-function StarRating({ value, onChange }) {
+function StarRating({ value, onChange, className = 'mt-4' }) {
   const [hovered, setHovered] = useState(0)
   const displayed = hovered || value || 0
 
   return (
-    <div className="mt-4 flex items-center gap-1" role="group" aria-label="Star rating">
+    <div className={`${className} flex items-center gap-1`} role="group" aria-label="Star rating">
       {[1, 2, 3, 4, 5].map((star) => (
         <button
           key={star}
@@ -874,7 +874,7 @@ function RecipeDetail() {
       onApplied={handleAssistApplied}
     />
     <section className="mx-auto w-full max-w-5xl">
-      <div className="sticky top-16 md:top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex items-center justify-end gap-2">
+      <div className="sticky top-16 lg:top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex items-center justify-end gap-2 overflow-x-auto whitespace-nowrap">
         {editing ? (
           <>
             {saveError && (
@@ -902,10 +902,10 @@ function RecipeDetail() {
             <button
               type="button"
               onClick={() => setCookMode(true)}
-              className="inline-flex items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               <ChefHat size={14} />
-              <span className="hidden md:inline">Cook</span>
+              <span className="hidden xl:inline">Cook</span>
             </button>
             <button
               type="button"
@@ -923,10 +923,10 @@ function RecipeDetail() {
               }}
               aria-label={mealPlanRecipeIds.has(Number(id)) ? 'Remove from meal plan' : 'Add to meal plan'}
               title={mealPlanRecipeIds.has(Number(id)) ? 'Remove from meal plan' : 'Add to meal plan'}
-              className={`inline-flex items-center gap-2 rounded border px-2.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50 ${mealPlanRecipeIds.has(Number(id)) ? 'border-ember/40 text-ember hover:border-rose-700 hover:text-rose-400' : 'border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300'}`}
+              className={`inline-flex shrink-0 items-center gap-2 rounded border px-2.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50 ${mealPlanRecipeIds.has(Number(id)) ? 'border-ember/40 text-ember hover:border-rose-700 hover:text-rose-400' : 'border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300'}`}
             >
               {mealPlanRecipeIds.has(Number(id)) ? <CalendarCheck size={14} /> : <CalendarPlus size={14} />}
-              <span className="hidden md:inline">
+              <span className="hidden xl:inline">
                 {mealPlanRecipeIds.has(Number(id)) ? 'On Meal Plan' : 'Meal Plan'}
               </span>
             </button>
@@ -934,51 +934,51 @@ function RecipeDetail() {
               type="button"
               onClick={() => setAssistOpen(true)}
               aria-label="Open recipe assistant"
-              className="inline-flex items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               <Sparkles size={14} />
-              <span className="hidden md:inline">Assist</span>
+              <span className="hidden xl:inline">Assist</span>
             </button>
             <button
               type="button"
               onClick={handleEnterEdit}
               aria-label="Edit recipe"
-              className="inline-flex items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               <Pencil size={14} />
-              <span className="hidden md:inline">Edit</span>
+              <span className="hidden xl:inline">Edit</span>
             </button>
             <button
               type="button"
               onClick={handleDeleteRecipe}
               aria-label="Delete recipe"
-              className="inline-flex items-center gap-2 rounded border border-rose-500/40 bg-transparent px-2.5 py-2 text-sm font-medium text-rose-300 transition hover:border-rose-400 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+              className="inline-flex shrink-0 items-center gap-2 rounded border border-rose-500/40 bg-transparent px-2.5 py-2 text-sm font-medium text-rose-300 transition hover:border-rose-400 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <Trash2 size={14} />
-              <span className="hidden md:inline">Delete Recipe</span>
+              <span className="hidden xl:inline">Delete Recipe</span>
             </button>
             <a
               href={`${API_BASE_URL}/recipes/${encodeURIComponent(id)}/export`}
               download
               aria-label="Export recipe as markdown"
-              className="inline-flex items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               <Download size={14} />
-              <span className="hidden md:inline">Export</span>
+              <span className="hidden xl:inline">Export</span>
             </a>
             <button
               type="button"
               onClick={handleShareRecipeLink}
               title="Copy MacroFactor import link"
               aria-label="Copy MacroFactor import link"
-              className="inline-flex items-center gap-2 rounded border border-mise-800 bg-mise-950/80 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 bg-mise-950/80 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               <Share2 size={14} />
-              <span className="hidden md:inline">Share to MacroFactor</span>
+              <span className="hidden xl:inline">Share to MacroFactor</span>
             </button>
             <span
               aria-live="polite"
-              className={`hidden md:inline text-xs text-mise-500 transition-opacity duration-300 ${copyConfirmationVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+              className={`hidden xl:inline text-xs text-mise-500 transition-opacity duration-300 ${copyConfirmationVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
             >
               Link copied!
             </span>
@@ -1066,7 +1066,10 @@ function RecipeDetail() {
         ) : (
           <div className="md:grid md:grid-cols-[minmax(0,1fr)_300px] md:items-start md:gap-8">
             <div className="min-w-0">
-              <h1 className="font-display text-3xl font-semibold text-mise-300">{recipe.title}</h1>
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <h1 className="font-display text-3xl font-semibold text-mise-300">{recipe.title}</h1>
+                <StarRating value={recipe.rating || 0} onChange={handleRatingChange} className="" />
+              </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
                 {tags.map((tag) => (
@@ -1103,8 +1106,6 @@ function RecipeDetail() {
                   </>
                 )}
               </div>
-
-              <StarRating value={recipe.rating || 0} onChange={handleRatingChange} />
 
               {displayMacros && (
                 <div className="mt-6 rounded border border-theme bg-mise-900 px-4 py-3">
@@ -1145,6 +1146,100 @@ function RecipeDetail() {
                   </div>
                 </div>
               )}
+
+              <div className="mt-6 rounded border border-theme bg-mise-900 px-4 py-3">
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="flex items-center gap-4" role="radiogroup" aria-label="Serving mode">
+                    {[
+                      { value: 'per-serving', label: 'Per Serving' },
+                      { value: 'scale', label: 'Scale Recipe' },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={mode === value}
+                        onClick={() => handleModeChange(value)}
+                        className="flex items-center gap-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      >
+                        <span
+                          className={[
+                            'flex h-4 w-4 items-center justify-center rounded-sm border text-[10px] font-bold',
+                            mode === value
+                              ? 'border-ember bg-ember text-white'
+                              : 'border-mise-700 text-transparent',
+                          ].join(' ')}
+                          aria-hidden="true"
+                        >
+                          ✓
+                        </span>
+                        <span className={mode === value ? 'text-mise-300' : 'text-mise-500'}>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2 border-t border-theme pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                    <button
+                      type="button"
+                      onClick={() => stepBox(-1)}
+                      disabled={boxValue <= 1}
+                      className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white disabled:opacity-40 disabled:hover:border-mise-800 disabled:hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      aria-label={inScaleMode ? 'Decrease scaling' : 'Decrease servings'}
+                    >
+                      −
+                    </button>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      aria-label={inScaleMode ? 'Scaling' : 'Servings'}
+                      aria-invalid={boxDraft !== null && parseDecimal(boxDraft) === null}
+                      value={boxDraft ?? formatDecimal(boxValue)}
+                      onChange={handleBoxInput}
+                      onFocus={(e) => e.target.select()}
+                      onBlur={() => setBoxDraft(null)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                      className="h-7 w-14 rounded border border-mise-800 bg-mise-950 text-center text-sm font-semibold text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember aria-[invalid=true]:border-rose-500/60"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => stepBox(1)}
+                      className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      aria-label={inScaleMode ? 'Increase scaling' : 'Increase servings'}
+                    >
+                      +
+                    </button>
+                    <p className="text-xs text-mise-500">{inScaleMode ? 'scaling' : 'servings'}</p>
+                  </div>
+
+                  {(inScaleMode ? scaleChangesRecipe : servings !== recipe.servings && servingsAreWhole) && (
+                    <button
+                      type="button"
+                      onClick={mode === 'scale' ? handleSaveScale : handleSaveServings}
+                      disabled={savingScale}
+                      className="rounded border border-mise-700 bg-mise-800/60 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:bg-mise-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:ml-2"
+                    >
+                      {savingScale
+                        ? 'Saving…'
+                        : inScaleMode
+                          ? `Rescale recipe ×${formatDecimal(scale)}`
+                          : `Save as ${servings} servings`}
+                    </button>
+                  )}
+                </div>
+                {inScaleMode && scaleChangesRecipe && scaledMacros && macros?.matched_count > 0 && (
+                  <p className="mt-2.5 text-xs text-mise-400" aria-live="polite">
+                    {Math.round(macros.total.calories / recipeServings)} → {Math.round(scaledMacros.calories / recipeServings)} kcal per serving
+                    {' · '}
+                    {Math.round(macros.total.calories)} → {Math.round(scaledMacros.calories)} total
+                  </p>
+                )}
+                <p className="mt-2.5 text-[11px] leading-snug text-mise-600">
+                  {inScaleMode
+                    ? `Multiplies every ingredient amount. Servings stay at ${recipe.servings}, so calories and macros per serving scale too. Rescale saves the new amounts over this recipe.`
+                    : 'Splits the recipe into more or fewer portions. Ingredient amounts don’t change, only the per-serving macros.'}
+                  {!inScaleMode && !servingsAreWhole && ' Fractional servings are for viewing only; saving needs a whole number.'}
+                </p>
+              </div>
             </div>
 
             <div className="mt-6 md:mt-0">
@@ -1157,102 +1252,6 @@ function RecipeDetail() {
           </div>
         )}
       </header>
-
-      {!editing && (
-        <div className="mt-6 w-full rounded border border-theme bg-mise-900 px-4 py-3 sm:inline-block sm:w-auto">
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div className="flex items-center gap-4" role="radiogroup" aria-label="Serving mode">
-            {[
-              { value: 'per-serving', label: 'Per Serving' },
-              { value: 'scale', label: 'Scale Recipe' },
-            ].map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={mode === value}
-                onClick={() => handleModeChange(value)}
-                className="flex items-center gap-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                <span
-                  className={[
-                    'flex h-4 w-4 items-center justify-center rounded-sm border text-[10px] font-bold',
-                    mode === value
-                      ? 'border-ember bg-ember text-white'
-                      : 'border-mise-700 text-transparent',
-                  ].join(' ')}
-                  aria-hidden="true"
-                >
-                  ✓
-                </span>
-                <span className={mode === value ? 'text-mise-300' : 'text-mise-500'}>{label}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 border-t border-theme pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-            <button
-              type="button"
-              onClick={() => stepBox(-1)}
-              disabled={boxValue <= 1}
-              className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white disabled:opacity-40 disabled:hover:border-mise-800 disabled:hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              aria-label={inScaleMode ? 'Decrease scaling' : 'Decrease servings'}
-            >
-              −
-            </button>
-            <input
-              type="text"
-              inputMode="decimal"
-              aria-label={inScaleMode ? 'Scaling' : 'Servings'}
-              aria-invalid={boxDraft !== null && parseDecimal(boxDraft) === null}
-              value={boxDraft ?? formatDecimal(boxValue)}
-              onChange={handleBoxInput}
-              onFocus={(e) => e.target.select()}
-              onBlur={() => setBoxDraft(null)}
-              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-              className="h-7 w-14 rounded border border-mise-800 bg-mise-950 text-center text-sm font-semibold text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember aria-[invalid=true]:border-rose-500/60"
-            />
-            <button
-              type="button"
-              onClick={() => stepBox(1)}
-              className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              aria-label={inScaleMode ? 'Increase scaling' : 'Increase servings'}
-            >
-              +
-            </button>
-            <p className="text-xs text-mise-500">{inScaleMode ? 'scaling' : 'servings'}</p>
-          </div>
-
-          {(inScaleMode ? scaleChangesRecipe : servings !== recipe.servings && servingsAreWhole) && (
-            <button
-              type="button"
-              onClick={mode === 'scale' ? handleSaveScale : handleSaveServings}
-              disabled={savingScale}
-              className="rounded border border-mise-700 bg-mise-800/60 px-3 py-1.5 text-xs font-medium text-mise-300 transition hover:border-mise-600 hover:bg-mise-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:ml-2"
-            >
-              {savingScale
-                ? 'Saving…'
-                : inScaleMode
-                  ? `Rescale recipe ×${formatDecimal(scale)}`
-                  : `Save as ${servings} servings`}
-            </button>
-          )}
-        </div>
-        {inScaleMode && scaleChangesRecipe && scaledMacros && macros?.matched_count > 0 && (
-          <p className="mt-2.5 text-xs text-mise-400" aria-live="polite">
-            {Math.round(macros.total.calories / recipeServings)} → {Math.round(scaledMacros.calories / recipeServings)} kcal per serving
-            {' · '}
-            {Math.round(macros.total.calories)} → {Math.round(scaledMacros.calories)} total
-          </p>
-        )}
-        <p className="mt-2.5 text-[11px] leading-snug text-mise-600">
-          {inScaleMode
-            ? `Multiplies every ingredient amount. Servings stay at ${recipe.servings}, so calories and macros per serving scale too. Rescale saves the new amounts over this recipe.`
-            : 'Splits the recipe into more or fewer portions. Ingredient amounts don’t change, only the per-serving macros.'}
-          {!inScaleMode && !servingsAreWhole && ' Fractional servings are for viewing only; saving needs a whole number.'}
-        </p>
-        </div>
-      )}
 
       {editing ? (
         <div className="mt-6 space-y-6">
