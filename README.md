@@ -11,9 +11,10 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
 - **Recipe library** – create, edit, tag, rate, and organize recipes by cookbook, with image upload or URL. Ingredients can be split into labeled sections (marinade, sauce, …) that carry through the recipe view, cook mode, and Markdown export.
 - **Serving scaling** – two modes, either saved back to the recipe. *Per Serving* re-portions a fixed dish: save a new serving count and the ingredient amounts stay put while the per-serving macros shift. *Scale Recipe* multiplies every ingredient amount by a number you type (0.75, 1.25, …) with a live before/after calorie preview; Rescale saves the new amounts over the recipe and the servings count stays the same, so per-serving macros scale too. Weights and volumes keep two decimals and counts (eggs, cloves) round to whole numbers, never below 1.
 - **Macros** – ingredients link to a nutrition database (local, [USDA FoodData Central](https://fdc.nal.usda.gov/), or [Open Food Facts](https://world.openfoodfacts.org/), including barcode lookup); total and per-serving calories/protein/carbs/fat are calculated from the linked ingredients and displayed on the recipe, with a per-ingredient breakdown. No food diary or day-level tracking.
-- **AI assistance** (any OpenAI-compatible API, [OpenRouter](https://openrouter.ai/) by default) – import a recipe from pasted text or a URL; turn a free-text ingredient list into structured rows (reading section headers and splitting shared-quantity lines like `10g salt, black pepper, chili powder` into separate items) and match each to the nutrition database; suggest tags; and a per-recipe **edit assistant** — describe an adjustment or correction in plain language and accept or decline each proposed change before it's saved.
+- **AI assistance** (any OpenAI-compatible API, [OpenRouter](https://openrouter.ai/) by default) – import a recipe from pasted text or a URL; turn a free-text ingredient list into structured rows (reading section headers and splitting shared-quantity lines like `10g salt, black pepper, chili powder` into separate items) and match each to the nutrition database; suggest tags; and a per-recipe **edit assistant** — chat with it about the recipe, and when you ask for a change, it drafts a diff you accept or decline before anything is saved.
 - **Cook mode** – full-screen, checklist-style step view that keeps the screen awake.
 - **Meal planning** – add recipes to a meal plan and generate a consolidated shopping list.
+- **PDF library** – upload cookbook PDFs (up to 50 MB) to a central library and view them in-browser; not tied to a specific recipe.
 - **Sharing & export** – Markdown export/import, and a shareable recipe page that embeds schema.org Recipe metadata (with the calculated macros) so it can be pulled straight into [MacroFactor](https://macrofactorapp.com/)'s "import recipe from URL".
 
 ## Screenshots
@@ -55,13 +56,13 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
 ```
 backend/          FastAPI app
   app/
-    routers/      recipes, ingredients, meal_plan, settings, share
-    services/     AI, ingredient matching
+    routers/      recipes, ingredients, meal_plan, pdfs, settings, share
+    services/     AI, ingredient matching, nutrition
     models/       SQLAlchemy models
     schemas/      Pydantic schemas
 frontend/         React + Vite app
-  src/pages/      RecipeBrowser, RecipeDetail, AddRecipe, IngredientDatabase, Settings
-  src/components/ AiAssistPanel, AiChangeCard, shopping-list & unit-converter modals
+  src/pages/      RecipeBrowser, RecipeDetail, AddRecipe, MealPlan, IngredientDatabase, PdfLibrary, Settings
+  src/components/ AiAssistPanel, AiChangeCard, ImportRecipeModal, shopping-list & unit-converter modals
 docs/             planning notes
 ```
 
