@@ -113,6 +113,38 @@ export function deleteRecipe(id) {
   })
 }
 
+export function getRecipeAttachments(recipeId) {
+  return request(`/recipes/${encodeURIComponent(recipeId)}/attachments`)
+}
+
+export async function uploadRecipeAttachment(recipeId, file) {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch(`${BASE_URL}/recipes/${encodeURIComponent(recipeId)}/attachments`, {
+    method: 'POST',
+    body: form,
+  })
+
+  if (!response.ok) {
+    let message = `Upload failed with status ${response.status}`
+    try {
+      const body = await response.json()
+      message = typeof body?.detail === 'string' ? body.detail : message
+    } catch {
+      // Keep the generic error message.
+    }
+    throw new Error(message)
+  }
+
+  return response.json()
+}
+
+export function deleteRecipeAttachment(recipeId, attachmentId) {
+  return request(`/recipes/${encodeURIComponent(recipeId)}/attachments/${encodeURIComponent(attachmentId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function getIngredients() {
   return request('/ingredients')
 }
