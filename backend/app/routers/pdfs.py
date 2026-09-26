@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -33,7 +34,9 @@ def _response(document: PdfDocument) -> PdfDocumentResponse:
         media_type=document.media_type,
         size_bytes=document.size_bytes,
         created_at=document.created_at,
-        url=f"/uploads/{document.stored_filename}",
+        # Files travel through /api so installations with an outer reverse proxy
+        # do not need a separate /uploads forwarding rule.
+        url=f"/api/pdfs/{document.id}/file",
     )
 
 
@@ -94,6 +97,24 @@ async def upload_pdf_document(file: UploadFile = File(...), db: Session = Depend
         raise
 
     return _response(document)
+
+
+@router.get("/{document_id}/file")
+def get_pdf_document_file(document_id: int, db: Session = Depends(get_db)):
+    document = db.query(PdfDocument).filter(PdfDocument.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    file_path = UPLOADS_DIR / document.stored_filename
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="PDF file not found")
+
+    return FileResponse(
+        file_path,
+        media_type=document.media_type,
+        filename=document.original_filename,
+        content_disposition_type="inline",
+    )
 
 
 @router.delete("/{document_id}")
