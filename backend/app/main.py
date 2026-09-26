@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.database import create_tables, engine, get_db
 from app.models.recipe import Recipe
 from app.models.timestamps import utcnow
-from app.routers import recipes, ingredients, settings, share, meal_plan
+from app.routers import recipes, ingredients, settings, share, meal_plan, pdfs
 from app.routers.settings import ENV_FILE as AI_SETTINGS_ENV_FILE
 from app.services.ai import AIService
 import app.models  # noqa: F401 — ensures models are registered before create_all
@@ -91,6 +91,20 @@ def _migrate():
         ing_cols = {row[1] for row in result.fetchall()}
         if "serving_quantity" not in ing_cols:
             conn.execute(text("ALTER TABLE ingredients ADD COLUMN serving_quantity INTEGER DEFAULT 1"))
+
+        # Version 1 of PDF uploads incorrectly scoped documents to individual recipes.
+        # Keep any files already uploaded through that version by making them available in
+        # the central PDF Library. The old table is intentionally left in place for safety.
+        old_pdf_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recipe_attachments'")
+        ).first()
+        if old_pdf_table:
+            conn.execute(text("""
+                INSERT OR IGNORE INTO pdf_documents
+                    (original_filename, stored_filename, media_type, size_bytes, created_at)
+                SELECT original_filename, stored_filename, media_type, size_bytes, created_at
+                FROM recipe_attachments
+            """))
         conn.commit()
 
 
@@ -105,6 +119,7 @@ app.include_router(ingredients.router)
 app.include_router(settings.router)
 app.include_router(share.router)
 app.include_router(meal_plan.router)
+app.include_router(pdfs.router)
 
 
 app.mount('/uploads', StaticFiles(directory=str(UPLOADS_DIR)), name='uploads')

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { CalendarCheck, CalendarPlus, ChefHat, ChevronDown, ChevronUp, Download, FileText, Pencil, Share2, Sparkles, Star, Trash2, Upload, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, ChefHat, ChevronDown, ChevronUp, Download, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import AiAssistPanel from '../components/AiAssistPanel.jsx'
 import IngredientSearchPanel from '../components/IngredientSearchPanel.jsx'
@@ -11,15 +11,12 @@ import { resolveUploadUrl } from '../utils/uploads.js'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import {
   deleteRecipe,
-  deleteRecipeAttachment,
   getCookbooks,
   getIngredients,
   getRecipe,
-  getRecipeAttachments,
   getRecipeMacros,
   suggestTags,
   updateRecipe,
-  uploadRecipeAttachment,
 } from '../api/client.js'
 
 function formatScaledAmount(amount) {
@@ -190,132 +187,6 @@ function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
         )}
       </div>
     </div>
-  )
-}
-
-const MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
-
-function formatFileSize(bytes) {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.ceil(bytes / 1024))} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function PdfAttachments({ recipeId }) {
-  const fileInputRef = useRef(null)
-  const [attachments, setAttachments] = useState([])
-  const [loaded, setLoaded] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState('')
-  const [previewId, setPreviewId] = useState(null)
-
-  useEffect(() => {
-    let active = true
-    Promise.resolve().then(() => {
-      if (active) {
-        setLoaded(false)
-        setError('')
-      }
-    })
-    getRecipeAttachments(recipeId)
-      .then((data) => {
-        if (active) setAttachments(data)
-      })
-      .catch((err) => {
-        if (active) setError(err instanceof Error ? err.message : 'Could not load PDFs.')
-      })
-      .finally(() => {
-        if (active) setLoaded(true)
-      })
-    return () => { active = false }
-  }, [recipeId])
-
-  const handleUpload = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (file.size > MAX_PDF_UPLOAD_BYTES) {
-      setError('PDF must be 50 MB or smaller.')
-      event.target.value = ''
-      return
-    }
-
-    setUploading(true)
-    setError('')
-    try {
-      const attachment = await uploadRecipeAttachment(recipeId, file)
-      setAttachments((current) => [attachment, ...current])
-      setPreviewId(attachment.id)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not upload the PDF.')
-    } finally {
-      setUploading(false)
-      event.target.value = ''
-    }
-  }
-
-  const handleDelete = async (attachment) => {
-    setError('')
-    try {
-      await deleteRecipeAttachment(recipeId, attachment.id)
-      setAttachments((current) => current.filter((item) => item.id !== attachment.id))
-      setPreviewId((current) => current === attachment.id ? null : current)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not remove the PDF.')
-    }
-  }
-
-  const preview = attachments.find((attachment) => attachment.id === previewId)
-
-  return (
-    <section className="mt-5 rounded border border-theme bg-mise-950 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-display text-lg font-semibold text-mise-300">PDFs</h2>
-          <p className="mt-0.5 text-xs text-mise-500">Attach recipe cards, cookbook pages, or notes. Maximum 50 MB each.</p>
-        </div>
-        <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={handleUpload} />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="inline-flex items-center gap-2 rounded border border-mise-700 px-3 py-2 text-sm font-medium text-mise-300 transition hover:border-mise-600 hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-        >
-          <Upload size={14} />
-          {uploading ? 'Uploading…' : 'Upload PDF'}
-        </button>
-      </div>
-
-      {error && <p className="mt-3 rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
-
-      {loaded && attachments.length === 0 && !error && (
-        <p className="mt-4 text-sm text-mise-500">No PDFs attached yet.</p>
-      )}
-
-      {attachments.length > 0 && (
-        <ul className="mt-4 divide-y divide-mise-800 rounded border border-mise-800">
-          {attachments.map((attachment) => (
-            <li key={attachment.id} className="flex flex-wrap items-center gap-2 px-3 py-2.5">
-              <FileText size={16} className="shrink-0 text-mise-500" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate text-sm text-mise-300" title={attachment.original_filename}>{attachment.original_filename}</span>
-              <span className="text-xs text-mise-500">{formatFileSize(attachment.size_bytes)}</span>
-              <button type="button" onClick={() => setPreviewId((current) => current === attachment.id ? null : attachment.id)} className="rounded px-2 py-1 text-xs text-mise-400 transition hover:bg-mise-900 hover:text-mise-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember">
-                {previewId === attachment.id ? 'Hide' : 'View'}
-              </button>
-              <a href={resolveUploadUrl(attachment.url)} target="_blank" rel="noreferrer" className="rounded px-2 py-1 text-xs text-mise-400 transition hover:bg-mise-900 hover:text-mise-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember">Open</a>
-              <a href={resolveUploadUrl(attachment.url)} download={attachment.original_filename} aria-label={`Download ${attachment.original_filename}`} className="rounded p-1 text-mise-500 transition hover:bg-mise-900 hover:text-mise-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"><Download size={14} /></a>
-              <button type="button" onClick={() => handleDelete(attachment)} aria-label={`Delete ${attachment.original_filename}`} className="rounded p-1 text-mise-500 transition hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"><Trash2 size={14} /></button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {preview && (
-        <iframe
-          title={`PDF preview: ${preview.original_filename}`}
-          src={resolveUploadUrl(preview.url)}
-          className="mt-4 h-[680px] w-full rounded border border-mise-800 bg-white"
-        />
-      )}
-    </section>
   )
 }
 
@@ -1132,7 +1003,6 @@ function RecipeDetail() {
               imageUrl={recipe.image_url}
               onImageChange={(url) => setRecipe((r) => ({ ...r, image_url: url }))}
             />
-            <PdfAttachments recipeId={recipe.id} />
           </>
         )}
 

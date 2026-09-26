@@ -1,16 +1,15 @@
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, Integer, String
 
 from app.database import Base
 from app.models.timestamps import UTCDateTime, utcnow
 
 
-class RecipeAttachment(Base):
-    """A file stored locally and associated with one recipe."""
+class PdfDocument(Base):
+    """A PDF kept in Mise's document library."""
 
-    __tablename__ = "recipe_attachments"
+    __tablename__ = "pdf_documents"
 
     id = Column(Integer, primary_key=True, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
     original_filename = Column(String, nullable=False)
     stored_filename = Column(String, nullable=False, unique=True)
     media_type = Column(String, nullable=False)
