@@ -76,7 +76,7 @@ function App() {
   return (
     <MealPlanProvider>
     <div className="min-h-screen bg-mise-950 text-mise-300">
-      <header className="fixed left-0 right-0 top-0 z-40 border-b border-mise-800 bg-mise-950/95 px-4 py-3 backdrop-blur md:hidden">
+      <header className="fixed left-0 right-0 top-0 z-40 border-b border-mise-800 bg-mise-950/95 px-4 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between">
           <Link to="/" onClick={() => setIsMenuOpen(false)} className="group">
             <p className="font-display text-2xl font-bold text-mise-300 transition group-hover:text-mise-200">Mise en Place</p>
@@ -110,7 +110,7 @@ function App() {
         <button
           type="button"
           aria-label="Close navigation menu"
-          className="fixed inset-0 z-30 bg-mise-950/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember md:hidden"
+          className="fixed inset-0 z-30 bg-mise-950/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember lg:hidden"
           onClick={() => setIsMenuOpen(false)}
         />
       )}
@@ -119,7 +119,7 @@ function App() {
         className={[
           'fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r border-mise-800 bg-mise-950/95 px-4 py-6 backdrop-blur transition-transform',
           isMenuOpen ? 'translate-x-0' : '-translate-x-full',
-          'md:translate-x-0',
+          'lg:translate-x-0',
         ].join(' ')}
       >
         <div className="px-3">
@@ -178,7 +178,7 @@ function App() {
 
       {isConverterOpen && <UnitConverterModal onClose={() => setIsConverterOpen(false)} />}
 
-      <main className="min-h-screen px-4 pb-6 pt-20 md:ml-64 md:p-8">
+      <main className="min-h-screen px-4 pb-6 pt-20 lg:ml-64 lg:p-8">
         <Routes>
           <Route path="/" element={<RecipeBrowser />} />
           <Route path="/recipe/:id" element={<RecipeDetail />} />
