@@ -30,7 +30,9 @@ def load_environment(project_env: Path, settings_env: Path) -> None:
     load_dotenv(settings_env, override=True)
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# In the Docker image app/ lives at /app/app, and the persistent upload volume
+# is mounted at /app/uploads. Keep static serving and all upload writers on it.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_environment(PROJECT_ROOT / '.env', AI_SETTINGS_ENV_FILE)
 
 DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:5174"]
