@@ -4,14 +4,13 @@ import logging
 import re
 import uuid
 import zipfile
-from datetime import date, datetime
-from pathlib import Path
+from datetime import date
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -19,7 +18,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.ingredient import Ingredient
 from app.models.recipe import Recipe
-from app.models.recipe_attachment import RecipeAttachment
 from app.models.timestamps import utcnow
 from app.schemas.recipe import (
     AiEditRequest,
@@ -35,11 +33,6 @@ from app.services.matching import IngredientMatcher
 from app.services.nutrition import UNIT_TO_GRAMS, ingredient_grams, macro_factor
 
 router = APIRouter(prefix="/api/recipes", tags=["recipes"])
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-UPLOADS_DIR = PROJECT_ROOT / "uploads"
-MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
-PDF_CHUNK_BYTES = 1024 * 1024
 
 PARSE_SYSTEM_PROMPT = """You are a recipe formatter. Convert the provided recipe text into clean markdown format.
 Use exactly this structure:
@@ -1054,123 +1047,6 @@ def list_cookbooks(db: Session = Depends(get_db)):
     return [r.cookbook for r in rows]
 
 
-class RecipeAttachmentResponse(BaseModel):
-    id: int
-    original_filename: str
-    media_type: str
-    size_bytes: int
-    created_at: datetime
-    url: str
-
-
-def _attachment_response(attachment: RecipeAttachment) -> RecipeAttachmentResponse:
-    return RecipeAttachmentResponse(
-        id=attachment.id,
-        original_filename=attachment.original_filename,
-        media_type=attachment.media_type,
-        size_bytes=attachment.size_bytes,
-        created_at=attachment.created_at,
-        url=f"/uploads/{attachment.stored_filename}",
-    )
-
-
-def _get_recipe_or_404(recipe_id: int, db: Session) -> Recipe:
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-    return recipe
-
-
-@router.get("/{recipe_id}/attachments", response_model=list[RecipeAttachmentResponse])
-def list_recipe_attachments(recipe_id: int, db: Session = Depends(get_db)):
-    _get_recipe_or_404(recipe_id, db)
-    attachments = (
-        db.query(RecipeAttachment)
-        .filter(RecipeAttachment.recipe_id == recipe_id)
-        .order_by(RecipeAttachment.created_at.desc())
-        .all()
-    )
-    return [_attachment_response(attachment) for attachment in attachments]
-
-
-@router.post("/{recipe_id}/attachments", response_model=RecipeAttachmentResponse, status_code=201)
-async def upload_recipe_attachment(
-    recipe_id: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-):
-    _get_recipe_or_404(recipe_id, db)
-
-    if Path(file.filename or "").suffix.lower() != ".pdf" or file.content_type != "application/pdf":
-        raise HTTPException(status_code=415, detail="Unsupported file type. Upload a PDF file.")
-
-    UPLOADS_DIR.mkdir(exist_ok=True)
-    stored_filename = f"recipe-{recipe_id}-{uuid.uuid4().hex}.pdf"
-    temporary_path = UPLOADS_DIR / f".{uuid.uuid4().hex}.upload"
-    destination = UPLOADS_DIR / stored_filename
-    bytes_written = 0
-    first_chunk = b""
-
-    try:
-        with temporary_path.open("wb") as output:
-            while chunk := await file.read(PDF_CHUNK_BYTES):
-                if not first_chunk:
-                    first_chunk = chunk
-                bytes_written += len(chunk)
-                if bytes_written > MAX_PDF_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail="PDF must be 50 MB or smaller.")
-                output.write(chunk)
-
-        # PDF headers are allowed within the first 1,024 bytes by the PDF specification.
-        if b"%PDF-" not in first_chunk[:1024]:
-            raise HTTPException(status_code=415, detail="The uploaded file is not a valid PDF.")
-
-        temporary_path.replace(destination)
-    except HTTPException:
-        temporary_path.unlink(missing_ok=True)
-        raise
-    except OSError as exc:
-        temporary_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail="Could not save the PDF.") from exc
-    finally:
-        await file.close()
-
-    attachment = RecipeAttachment(
-        recipe_id=recipe_id,
-        original_filename=Path(file.filename or "document.pdf").name,
-        stored_filename=stored_filename,
-        media_type="application/pdf",
-        size_bytes=bytes_written,
-    )
-    try:
-        db.add(attachment)
-        db.commit()
-        db.refresh(attachment)
-    except Exception:
-        db.rollback()
-        destination.unlink(missing_ok=True)
-        raise
-
-    return _attachment_response(attachment)
-
-
-@router.delete("/{recipe_id}/attachments/{attachment_id}")
-def delete_recipe_attachment(recipe_id: int, attachment_id: int, db: Session = Depends(get_db)):
-    attachment = (
-        db.query(RecipeAttachment)
-        .filter(RecipeAttachment.id == attachment_id, RecipeAttachment.recipe_id == recipe_id)
-        .first()
-    )
-    if not attachment:
-        raise HTTPException(status_code=404, detail="PDF attachment not found")
-
-    file_path = UPLOADS_DIR / attachment.stored_filename
-    db.delete(attachment)
-    db.commit()
-    file_path.unlink(missing_ok=True)
-    return {"deleted": True}
-
-
 @router.get("", response_model=list[RecipeResponse])
 def list_recipes(db: Session = Depends(get_db)):
     return db.query(Recipe).order_by(Recipe.created_at.desc()).all()
@@ -1224,12 +1100,6 @@ def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    attachments = db.query(RecipeAttachment).filter(RecipeAttachment.recipe_id == recipe_id).all()
-    attachment_paths = [UPLOADS_DIR / attachment.stored_filename for attachment in attachments]
-    for attachment in attachments:
-        db.delete(attachment)
     db.delete(recipe)
     db.commit()
-    for attachment_path in attachment_paths:
-        attachment_path.unlink(missing_ok=True)
     return {"deleted": True}

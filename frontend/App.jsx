@@ -2,6 +2,7 @@ import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import AddRecipe from './src/pages/AddRecipe.jsx'
 import IngredientDatabase from './src/pages/IngredientDatabase.jsx'
 import MealPlan from './src/pages/MealPlan.jsx'
+import PdfLibrary from './src/pages/PdfLibrary.jsx'
 import RecipeBrowser from './src/pages/RecipeBrowser.jsx'
 import RecipeDetail from './src/pages/RecipeDetail.jsx'
 import Settings from './src/pages/Settings.jsx'
@@ -16,6 +17,7 @@ const navItems = [
   { label: 'Meal Plan', to: '/meal-plan' },
   { label: 'Add Recipe', to: '/add' },
   { label: 'Ingredients', to: '/ingredients' },
+  { label: 'PDF Library', to: '/pdfs' },
   { label: 'Settings', to: '/settings' },
 ]
 
@@ -183,6 +185,7 @@ function App() {
           <Route path="/add" element={<AddRecipe key={location.key} />} />
           <Route path="/meal-plan" element={<MealPlan />} />
           <Route path="/ingredients" element={<IngredientDatabase />} />
+          <Route path="/pdfs" element={<PdfLibrary />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>

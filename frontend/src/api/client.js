@@ -113,14 +113,14 @@ export function deleteRecipe(id) {
   })
 }
 
-export function getRecipeAttachments(recipeId) {
-  return request(`/recipes/${encodeURIComponent(recipeId)}/attachments`)
+export function getPdfDocuments() {
+  return request('/pdfs')
 }
 
-export async function uploadRecipeAttachment(recipeId, file) {
+export async function uploadPdfDocument(file) {
   const form = new FormData()
   form.append('file', file)
-  const response = await fetch(`${BASE_URL}/recipes/${encodeURIComponent(recipeId)}/attachments`, {
+  const response = await fetch(`${BASE_URL}/pdfs`, {
     method: 'POST',
     body: form,
   })
@@ -139,8 +139,8 @@ export async function uploadRecipeAttachment(recipeId, file) {
   return response.json()
 }
 
-export function deleteRecipeAttachment(recipeId, attachmentId) {
-  return request(`/recipes/${encodeURIComponent(recipeId)}/attachments/${encodeURIComponent(attachmentId)}`, {
+export function deletePdfDocument(documentId) {
+  return request(`/pdfs/${encodeURIComponent(documentId)}`, {
     method: 'DELETE',
   })
 }
