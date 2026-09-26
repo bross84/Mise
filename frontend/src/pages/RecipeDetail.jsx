@@ -124,7 +124,7 @@ function RecipeHeroImage({ recipeId, imageUrl, onImageChange }) {
   const resolvedUrl = resolveUploadUrl(imageUrl)
 
   return (
-    <div className="group relative mt-6 h-[240px] w-full overflow-hidden rounded border border-theme bg-mise-900">
+    <div className="group relative aspect-square w-full overflow-hidden rounded border border-theme bg-mise-900">
       {resolvedUrl ? (
         <img
           src={resolvedUrl}
@@ -988,170 +988,175 @@ function RecipeDetail() {
 
       <header className="mt-6">
         {editing ? (
-          <input
-            type="text"
-            value={draft.title}
-            onChange={(e) => setDraftField('title', e.target.value)}
-            placeholder="Recipe title"
-            className="font-display w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-3xl font-semibold text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-          />
-        ) : (
           <>
-            <h1 className="font-display text-3xl font-semibold text-mise-300">{recipe.title}</h1>
-            <RecipeHeroImage
-              recipeId={recipe.id}
-              imageUrl={recipe.image_url}
-              onImageChange={(url) => setRecipe((r) => ({ ...r, image_url: url }))}
+            <input
+              type="text"
+              value={draft.title}
+              onChange={(e) => setDraftField('title', e.target.value)}
+              placeholder="Recipe title"
+              className="font-display w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-3xl font-semibold text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             />
-          </>
-        )}
 
-        <div className="mt-3">
-          {editing ? (
-            <div className="rounded border border-mise-800 bg-mise-950 p-3">
-              <div className="flex flex-wrap gap-2">
-                {draft.tags.map((tag) => (
+            <div className="mt-3">
+              <div className="rounded border border-mise-800 bg-mise-950 p-3">
+                <div className="flex flex-wrap gap-2">
+                  {draft.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1.5 rounded border border-mise-800 bg-mise-800/60 px-2.5 py-1 text-xs font-medium text-mise-300"
+                    >
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => removeTag(tag)}
+                        aria-label={`Remove tag ${tag}`}
+                        className="text-mise-500 transition hover:text-mise-300 focus-visible:outline-none"
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addTag(tagInput)
+                      }
+                    }}
+                    placeholder="Add a tag"
+                    className={inputCls}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addTag(tagInput)}
+                    className="rounded border border-mise-800 px-3 py-2 text-sm text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSuggestTags}
+                    disabled={suggestingTags}
+                    className="shrink-0 rounded border border-mise-700 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-600 hover:text-mise-300 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                  >
+                    {suggestingTags ? 'Suggesting…' : '✦ Suggest'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center gap-3">
+              <label className="text-sm text-mise-500">Servings</label>
+              <input
+                type="number"
+                min="1"
+                value={draft.servings}
+                onChange={(e) => setDraftField('servings', e.target.value)}
+                className="w-24 rounded border border-mise-800 bg-mise-950 px-3 py-1.5 text-sm text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              />
+            </div>
+
+            <StarRating value={recipe.rating || 0} onChange={handleRatingChange} />
+          </>
+        ) : (
+          <div className="md:grid md:grid-cols-[minmax(0,1fr)_300px] md:items-start md:gap-8">
+            <div className="min-w-0">
+              <h1 className="font-display text-3xl font-semibold text-mise-300">{recipe.title}</h1>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {tags.map((tag) => (
                   <span
-                    key={tag}
-                    className="inline-flex items-center gap-1.5 rounded border border-mise-800 bg-mise-800/60 px-2.5 py-1 text-xs font-medium text-mise-300"
+                    key={`${recipe.id}-${tag}`}
+                    className="rounded border border-theme bg-mise-800/40 px-2.5 py-1 text-xs font-medium text-mise-500"
                   >
                     {tag}
-                    <button
-                      type="button"
-                      onClick={() => removeTag(tag)}
-                      aria-label={`Remove tag ${tag}`}
-                      className="text-mise-500 transition hover:text-mise-300 focus-visible:outline-none"
-                    >
-                      <X size={11} />
-                    </button>
                   </span>
                 ))}
               </div>
-              <div className="mt-2 flex gap-2">
-                <input
-                  type="text"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      addTag(tagInput)
-                    }
-                  }}
-                  placeholder="Add a tag"
-                  className={inputCls}
-                />
-                <button
-                  type="button"
-                  onClick={() => addTag(tagInput)}
-                  className="rounded border border-mise-800 px-3 py-2 text-sm text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                >
-                  Add
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSuggestTags}
-                  disabled={suggestingTags}
-                  className="shrink-0 rounded border border-mise-700 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-600 hover:text-mise-300 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                >
-                  {suggestingTags ? 'Suggesting…' : '✦ Suggest'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <span
-                  key={`${recipe.id}-${tag}`}
-                  className="rounded border border-theme bg-mise-800/40 px-2.5 py-1 text-xs font-medium text-mise-500"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
 
-        {editing ? (
-          <div className="mt-4 flex items-center gap-3">
-            <label className="text-sm text-mise-500">Servings</label>
-            <input
-              type="number"
-              min="1"
-              value={draft.servings}
-              onChange={(e) => setDraftField('servings', e.target.value)}
-              className="w-24 rounded border border-mise-800 bg-mise-950 px-3 py-1.5 text-sm text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-            />
-          </div>
-        ) : (
-          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-mise-500">
-            <span>Servings: {recipe.servings}</span>
-            {recipe.cookbook && (
-              <>
-                <span className="text-mise-700" aria-hidden="true">·</span>
-                <span>{recipe.cookbook}</span>
-              </>
-            )}
-            {recipe.source_url && (
-              <>
-                <span className="text-mise-700" aria-hidden="true">·</span>
-                <a
-                  href={recipe.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-ember hover:underline"
-                  title={recipe.source_url}
-                >
-                  {(() => { try { return new URL(recipe.source_url).hostname.replace(/^www\./, '') } catch { return recipe.source_url } })()}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                </a>
-              </>
-            )}
+              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-mise-500">
+                <span>Servings: {recipe.servings}</span>
+                {recipe.cookbook && (
+                  <>
+                    <span className="text-mise-700" aria-hidden="true">·</span>
+                    <span>{recipe.cookbook}</span>
+                  </>
+                )}
+                {recipe.source_url && (
+                  <>
+                    <span className="text-mise-700" aria-hidden="true">·</span>
+                    <a
+                      href={recipe.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-ember hover:underline"
+                      title={recipe.source_url}
+                    >
+                      {(() => { try { return new URL(recipe.source_url).hostname.replace(/^www\./, '') } catch { return recipe.source_url } })()}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    </a>
+                  </>
+                )}
+              </div>
+
+              <StarRating value={recipe.rating || 0} onChange={handleRatingChange} />
+
+              {displayMacros && (
+                <div className="mt-6 rounded border border-theme bg-mise-900 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-6">
+                      {[
+                        { label: 'Calories', value: displayMacros.calories, unit: '' },
+                        { label: 'Protein', value: displayMacros.protein, unit: 'g' },
+                        { label: 'Carbs', value: displayMacros.carbs, unit: 'g' },
+                        { label: 'Fat', value: displayMacros.fat, unit: 'g' },
+                      ].map(({ label, value, unit }) => (
+                        <div key={label}>
+                          <p className="text-base font-semibold text-mise-300">
+                            {Math.round(value)}{unit}
+                          </p>
+                          <p className="text-xs text-mise-500">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center rounded border border-mise-800 text-xs font-medium">
+                      {[
+                        { value: 'per-serving', label: 'Per Serving' },
+                        { value: 'total', label: 'Total' },
+                      ].map(({ value, label }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setMacroView(value)}
+                          className={[
+                            'px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember first:rounded-l last:rounded-r',
+                            macroView === value ? 'bg-mise-800 text-mise-300' : 'text-mise-500 hover:text-mise-300',
+                          ].join(' ')}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 md:mt-0">
+              <RecipeHeroImage
+                recipeId={recipe.id}
+                imageUrl={recipe.image_url}
+                onImageChange={(url) => setRecipe((r) => ({ ...r, image_url: url }))}
+              />
+            </div>
           </div>
         )}
-
-        <StarRating value={recipe.rating || 0} onChange={handleRatingChange} />
       </header>
-
-      {!editing && displayMacros && (
-        <div className="mt-6 rounded border border-theme bg-mise-900 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-6">
-              {[
-                { label: 'Calories', value: displayMacros.calories, unit: '' },
-                { label: 'Protein', value: displayMacros.protein, unit: 'g' },
-                { label: 'Carbs', value: displayMacros.carbs, unit: 'g' },
-                { label: 'Fat', value: displayMacros.fat, unit: 'g' },
-              ].map(({ label, value, unit }) => (
-                <div key={label}>
-                  <p className="text-base font-semibold text-mise-300">
-                    {Math.round(value)}{unit}
-                  </p>
-                  <p className="text-xs text-mise-500">{label}</p>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center rounded border border-mise-800 text-xs font-medium">
-              {[
-                { value: 'per-serving', label: 'Per Serving' },
-                { value: 'total', label: 'Total' },
-              ].map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setMacroView(value)}
-                  className={[
-                    'px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember first:rounded-l last:rounded-r',
-                    macroView === value ? 'bg-mise-800 text-mise-300' : 'text-mise-500 hover:text-mise-300',
-                  ].join(' ')}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {!editing && (
         <div className="mt-6 w-full rounded border border-theme bg-mise-900 px-4 py-3 sm:inline-block sm:w-auto">
