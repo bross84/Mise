@@ -42,23 +42,30 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
   </tr>
   <tr>
     <td width="50%">
-      <img src="assets/ai-assist.webp" alt="Recipe assistant panel with a drafted change card"><br>
-      <sub><b>Recipe assistant.</b> Chat freely about the recipe — nothing changes until you press Draft change, which turns a request into a diff you accept or decline.</sub>
+      <img src="assets/ai-assist-chat.webp" alt="Recipe assistant panel mid-conversation with no changes proposed"><br>
+      <sub><b>Recipe assistant — chat.</b> Talk it through freely; nothing is ever proposed or changed from plain conversation.</sub>
     </td>
     <td width="50%">
-      <img src="assets/settings-ai.png" alt="Settings page AI section with API key, model, and base URL fields"><br>
-      <sub><b>AI provider setup.</b> API key, model, and base URL in one place — point it at OpenRouter, OpenAI, Groq, Ollama, or any other OpenAI-compatible endpoint.</sub>
+      <img src="assets/ai-assist-draft.webp" alt="Recipe assistant panel with a drafted change card"><br>
+      <sub><b>Recipe assistant — Draft change.</b> Ask for an edit and press Draft change to get a diff you accept or decline, field by field, before anything is saved.</sub>
     </td>
   </tr>
   <tr>
     <td width="50%">
+      <img src="assets/settings-ai.png" alt="Settings page AI section with API key, model, and base URL fields"><br>
+      <sub><b>AI provider setup.</b> API key, model, and base URL in one place — point it at OpenRouter, OpenAI, Groq, Ollama, or any other OpenAI-compatible endpoint.</sub>
+    </td>
+    <td width="50%">
       <img src="assets/pdf-library.webp" alt="PDF Library with a cookbook PDF open in the in-browser viewer"><br>
       <sub><b>PDF library.</b> Upload cookbook PDFs and read them in-browser, no download required.</sub>
     </td>
+  </tr>
+  <tr>
     <td width="50%">
       <img src="assets/cook-mode.webp" alt="Cook mode full-screen ingredient checklist on a phone"><br>
       <sub><b>Cook mode.</b> Full-screen, checklist-style step view, built for a phone propped up next to the stove.</sub>
     </td>
+    <td width="50%"></td>
   </tr>
 </table>
 
