@@ -1522,7 +1522,7 @@ function RecipeDetail() {
               <div className="mt-3 text-sm"><MarkdownText text={recipe.notes} /></div>
             </section>
           )}
-          <div className="mt-6 flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-start">
+          <div className="mt-6 flex flex-col gap-6">
             <section className="rounded border border-theme bg-mise-900 p-4">
               <div className="flex items-baseline justify-between gap-2">
                 <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
