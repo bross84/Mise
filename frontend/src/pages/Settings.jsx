@@ -18,7 +18,6 @@ function Settings() {
   const [model, setModel] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [hasKey, setHasKey] = useState(false)
-  const [showProvider, setShowProvider] = useState(false)
   const [apiKeyStatus, setApiKeyStatus] = useState({ type: '', message: '' })
   const [isSaving, setIsSaving] = useState(false)
   const [testStatus, setTestStatus] = useState({ type: '', message: '' })
@@ -34,9 +33,6 @@ function Settings() {
         setModel(data.model ?? '')
         setBaseUrl(data.base_url ?? '')
         setHasKey(Boolean(data.has_key))
-        if (data.base_url && data.base_url !== 'https://openrouter.ai/api/v1') {
-          setShowProvider(true)
-        }
       })
       .catch(() => {})
   }, [])
@@ -152,34 +148,24 @@ function Settings() {
             />
           </div>
 
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() => setShowProvider((v) => !v)}
-              className="text-xs text-mise-400 underline-offset-2 transition hover:text-mise-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-            >
-              {showProvider ? 'Hide provider settings' : 'Provider settings'}
-            </button>
-            {showProvider && (
-              <div className="mt-3">
-                <label className={labelClassName} htmlFor="ai-base-url">
-                  API base URL
-                </label>
-                <input
-                  id="ai-base-url"
-                  type="url"
-                  value={baseUrl}
-                  onChange={(event) => setBaseUrl(event.target.value)}
-                  placeholder="https://openrouter.ai/api/v1"
-                  className={inputClassName}
-                  autoComplete="off"
-                />
-                <p className="mt-1.5 text-xs text-mise-600">
-                  e.g. <code className="text-mise-500">https://api.openai.com/v1</code> ·{' '}
-                  <code className="text-mise-500">http://localhost:11434/v1</code> for Ollama
-                </p>
-              </div>
-            )}
+          <div className="mt-4">
+            <label className={labelClassName} htmlFor="ai-base-url">
+              API base URL
+            </label>
+            <input
+              id="ai-base-url"
+              type="url"
+              value={baseUrl}
+              onChange={(event) => setBaseUrl(event.target.value)}
+              placeholder="https://openrouter.ai/api/v1"
+              className={inputClassName}
+              autoComplete="off"
+            />
+            <p className="mt-1.5 text-xs text-mise-600">
+              e.g. <code className="text-mise-500">https://api.openai.com/v1</code> ·{' '}
+              <code className="text-mise-500">https://api.groq.com/openai/v1</code> for Groq ·{' '}
+              <code className="text-mise-500">http://localhost:11434/v1</code> for Ollama
+            </p>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
