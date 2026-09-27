@@ -1536,15 +1536,15 @@ function RecipeDetail() {
                   : scaledIngredients.slice(0, INGREDIENT_COLLAPSE_THRESHOLD)
                 return (
                   <>
-                    <div className="mt-4 space-y-4">
+                    <div className="mt-4 columns-1 gap-4 space-y-3 sm:columns-2">
                       {groupIngredients(visible).map((section, si) => (
                         <div key={`${section.name ?? "ungrouped"}-${si}`}>
                           {section.name && (
-                            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-mise-500">
+                            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-mise-500">
                               {section.name}
                             </h3>
                           )}
-                          <ul className="space-y-2">
+                          <ul className="space-y-1.5">
                             {section.items.map((ingredient) => {
                               const bd = ingredient.breakdown
                               const macroLine = bd
@@ -1555,20 +1555,20 @@ function RecipeDetail() {
                               return (
                                 <li
                                   key={ingredient.id}
-                                  className="flex items-start justify-between gap-4 rounded border border-theme bg-mise-950/50 px-3 py-2"
+                                  className="flex items-start justify-between gap-3 break-inside-avoid rounded border border-theme bg-mise-950/50 px-2.5 py-1.5"
                                 >
                                   <div className="min-w-0">
-                                    <span className="text-mise-400">
+                                    <span className="text-sm text-mise-400">
                                       {toTitleCase(ingredient.displayName)}
                                       {!ingredient.linkedToDb && (
                                         <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
                                       )}
                                     </span>
                                     {macroLine !== null && (
-                                      <p className="mt-0.5 text-[11px] text-mise-600">{macroLine}</p>
+                                      <p className="mt-0.5 text-[10px] text-mise-600">{macroLine}</p>
                                     )}
                                   </div>
-                                  <span className="shrink-0 text-sm font-medium text-mise-300">
+                                  <span className="shrink-0 text-xs font-medium text-mise-300">
                                     {ingredient.scaledAmount} {ingredient.unit}
                                   </span>
                                 </li>
