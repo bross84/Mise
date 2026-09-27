@@ -30,10 +30,11 @@ const emptyCustomForm = { name: '', barcode: '', ...emptyNutritionForm }
 const resultKey = (result) => `${result.source}:${result.source_id ?? result.name}`
 
 // A plain target="_blank" link can't strip the toolbar/menubar/location bar — only
-// window.open's feature string can, so the verify-nutrition search opens as a small popup.
+// window.open's feature string can, so the verify-nutrition search opens as a popup.
+// Sized generously (capped to the available screen) rather than a fixed small box.
 function openMinimalPopup(url) {
-  const width = 480
-  const height = 720
+  const width = Math.min(1100, window.screen.availWidth - 80)
+  const height = Math.min(850, window.screen.availHeight - 80)
   const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2)
   const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2)
   window.open(
