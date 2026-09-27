@@ -267,7 +267,9 @@ function Settings() {
                       <span className="text-sm text-mise-300">{b.name}</span>
                       <span className={[
                         'ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-                        b.source === 'usda' ? 'border border-sky-500/30 bg-sky-500/20 text-sky-200' : 'border border-emerald-500/30 bg-emerald-500/20 text-emerald-200',
+                        b.source === 'usda'
+                          ? 'border border-sky-500/30 bg-sky-500/20 text-sky-700 dark:text-sky-200'
+                          : 'border border-emerald-500/30 bg-emerald-500/20 text-emerald-700 dark:text-emerald-200',
                       ].join(' ')}>
                         {b.source === 'usda' ? 'USDA' : 'OFF'}
                       </span>
