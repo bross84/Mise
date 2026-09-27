@@ -8,10 +8,10 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
 
 ## Features
 
-- **Recipe library** – create, edit, tag, rate, and organize recipes by cookbook, with image upload or URL. Ingredients can be split into labeled sections (marinade, sauce, …) that carry through the recipe view, cook mode, and Markdown export.
+- **Recipe library** – create, edit, tag, rate, and organize recipes by cookbook, with image upload or URL. Ingredients can be split into labeled sections (marinade, sauce, …) that carry through the recipe view, cook mode, and Markdown export. Each recipe detail page also surfaces a **Similar Recipes** row, ranked by shared tags and shared linked ingredients.
 - **Serving scaling** – two modes, either saved back to the recipe. *Per Serving* re-portions a fixed dish: save a new serving count and the ingredient amounts stay put while the per-serving macros shift. *Scale Recipe* multiplies every ingredient amount by a number you type (0.75, 1.25, …) with a live before/after calorie preview; Rescale saves the new amounts over the recipe and the servings count stays the same, so per-serving macros scale too. Weights and volumes keep two decimals and counts (eggs, cloves) round to whole numbers, never below 1.
 - **Macros** – ingredients link to a nutrition database (local, [USDA FoodData Central](https://fdc.nal.usda.gov/), or [Open Food Facts](https://world.openfoodfacts.org/), including barcode lookup); total and per-serving calories/protein/carbs/fat are calculated from the linked ingredients and displayed on the recipe, with a per-ingredient breakdown. No food diary or day-level tracking.
-- **AI assistance** (any OpenAI-compatible API, [OpenRouter](https://openrouter.ai/) by default) – import a recipe from pasted text or a URL; turn a free-text ingredient list into structured rows (reading section headers and splitting shared-quantity lines like `10g salt, black pepper, chili powder` into separate items) and match each to the nutrition database; suggest tags; and a per-recipe **edit assistant** — chat with it about the recipe, and when you ask for a change, it drafts a diff you accept or decline before anything is saved.
+- **AI assistance** (any OpenAI-compatible API, [OpenRouter](https://openrouter.ai/) by default — OpenAI, Groq, Together, local Ollama/LM Studio, etc. all work) – import a recipe from pasted text or a URL; turn a free-text ingredient list into structured rows (reading section headers and splitting shared-quantity lines like `10g salt, black pepper, chili powder` into separate items) and match each to the nutrition database; suggest tags; and a per-recipe **edit assistant** — chat with it freely about the recipe (nothing is ever proposed or changed from plain conversation), then press **Draft change** to turn a request into a diff you accept or decline, field by field, before anything is saved.
 - **Cook mode** – full-screen, checklist-style step view that keeps the screen awake.
 - **Meal planning** – add recipes to a meal plan and generate a consolidated shopping list.
 - **PDF library** – upload cookbook PDFs (up to 50 MB) to a central library and view them in-browser; not tied to a specific recipe.
@@ -38,6 +38,26 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
     <td width="50%">
       <img src="assets/ingredient-database.png" alt="Ingredient database table with calorie values"><br>
       <sub><b>Ingredient database.</b> Every linked ingredient, sourced from USDA, Open Food Facts, or entered by hand.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="assets/ai-assist.webp" alt="Recipe assistant panel with a drafted change card"><br>
+      <sub><b>Recipe assistant.</b> Chat freely about the recipe — nothing changes until you press Draft change, which turns a request into a diff you accept or decline.</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/settings-ai.png" alt="Settings page AI section with API key, model, and base URL fields"><br>
+      <sub><b>AI provider setup.</b> API key, model, and base URL in one place — point it at OpenRouter, OpenAI, Groq, Ollama, or any other OpenAI-compatible endpoint.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="assets/pdf-library.webp" alt="PDF Library with a cookbook PDF open in the in-browser viewer"><br>
+      <sub><b>PDF library.</b> Upload cookbook PDFs and read them in-browser, no download required.</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/cook-mode.webp" alt="Cook mode full-screen ingredient checklist on a phone"><br>
+      <sub><b>Cook mode.</b> Full-screen, checklist-style step view, built for a phone propped up next to the stove.</sub>
     </td>
   </tr>
 </table>
