@@ -60,14 +60,15 @@ function ThemeToggle({ compact = false }) {
           type="button"
           role="radio"
           aria-checked={theme === value}
+          title={label}
           onClick={() => setTheme(value)}
           className={[
-            'flex flex-1 items-center justify-center gap-1.5 px-2 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember first:rounded-l last:rounded-r',
+            'flex flex-1 items-center justify-center px-2 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember first:rounded-l last:rounded-r',
             theme === value ? 'bg-mise-800 text-mise-300' : 'text-mise-500 hover:text-mise-300',
           ].join(' ')}
         >
-          <Icon size={14} />
-          <span>{label}</span>
+          <Icon size={15} />
+          <span className="sr-only">{label}</span>
         </button>
       ))}
     </div>
