@@ -60,14 +60,9 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
       <sub><b>PDF library.</b> Upload cookbook PDFs and read them in-browser, no download required.</sub>
     </td>
   </tr>
-  <tr>
-    <td width="50%">
-      <img src="assets/cook-mode.webp" alt="Cook mode full-screen ingredient checklist on a phone"><br>
-      <sub><b>Cook mode.</b> Full-screen, checklist-style step view, built for a phone propped up next to the stove.</sub>
-    </td>
-    <td width="50%"></td>
-  </tr>
 </table>
+
+Cook mode (full-screen, checklist-style step view) is built for a phone propped up next to the stove — see the **Features** list above rather than a screenshot here.
 
 ## Tech stack
 
