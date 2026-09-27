@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { CalendarCheck, CalendarPlus, ChefHat, ChevronDown, ChevronUp, Download, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, ChefHat, ChevronDown, ChevronUp, Copy, Download, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import AiAssistPanel from '../components/AiAssistPanel.jsx'
 import IngredientSearchPanel from '../components/IngredientSearchPanel.jsx'
@@ -11,6 +11,7 @@ import { resolveUploadUrl } from '../utils/uploads.js'
 import { useMealPlan } from '../context/MealPlanContext.jsx'
 import {
   deleteRecipe,
+  duplicateRecipe,
   getCookbooks,
   getIngredients,
   getRecipe,
@@ -411,6 +412,7 @@ function RecipeDetail() {
   const { id } = useParams()
   const { items: mealPlanItems, recipeIds: mealPlanRecipeIds, add: addToMealPlan, remove: removeFromMealPlan } = useMealPlan()
   const [addingToMealPlan, setAddingToMealPlan] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
   const [cookMode, setCookMode] = useState(false)
   const [assistOpen, setAssistOpen] = useState(false)
   const [savingScale, setSavingScale] = useState(false)
@@ -823,6 +825,20 @@ function RecipeDetail() {
   const tags = Array.isArray(recipe.tags) ? recipe.tags : []
   const steps = Array.isArray(recipe.steps) ? recipe.steps : []
 
+  const handleDuplicateRecipe = async () => {
+    if (duplicating) return
+    setDuplicating(true)
+    try {
+      const copy = await duplicateRecipe(id)
+      navigate(`/recipe/${copy.id}`)
+    } catch (err) {
+      console.error('Failed to duplicate recipe:', err)
+      window.alert('Failed to duplicate recipe. Please try again.')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   const handleDeleteRecipe = async () => {
     if (!window.confirm('Delete this recipe?')) {
       return
@@ -947,6 +963,16 @@ function RecipeDetail() {
             >
               <Pencil size={14} />
               <span className="hidden xl:inline">Edit</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDuplicateRecipe}
+              disabled={duplicating}
+              aria-label="Duplicate recipe"
+              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50"
+            >
+              <Copy size={14} />
+              <span className="hidden xl:inline">{duplicating ? 'Duplicating…' : 'Duplicate'}</span>
             </button>
             <button
               type="button"

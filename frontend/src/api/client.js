@@ -65,6 +65,12 @@ export function createRecipe(data) {
   })
 }
 
+export function duplicateRecipe(id) {
+  return request(`/recipes/${encodeURIComponent(id)}/duplicate`, {
+    method: 'POST',
+  })
+}
+
 export function parseRecipe(data) {
   return request('/recipes/parse', {
     method: 'POST',

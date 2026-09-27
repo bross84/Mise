@@ -4,6 +4,7 @@ import logging
 import re
 import uuid
 import zipfile
+from copy import deepcopy
 from datetime import date
 from typing import Optional
 
@@ -1071,6 +1072,30 @@ def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     return recipe
+
+
+@router.post("/{recipe_id}/duplicate", response_model=RecipeResponse, status_code=201)
+def duplicate_recipe(recipe_id: int, db: Session = Depends(get_db)):
+    original = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not original:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    duplicate = Recipe(
+        title=f"{original.title} (copy)",
+        servings=original.servings,
+        tags=list(original.tags or []),
+        ingredients=deepcopy(original.ingredients or []),
+        steps=deepcopy(original.steps or []),
+        notes=original.notes,
+        instructions=original.instructions,
+        source_url=original.source_url,
+        cookbook=original.cookbook,
+        image_url=original.image_url,
+    )
+    db.add(duplicate)
+    db.commit()
+    db.refresh(duplicate)
+    return duplicate
 
 
 @router.post("", response_model=RecipeResponse, status_code=201)
