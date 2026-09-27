@@ -166,3 +166,16 @@ docker compose up -d
 ```
 
 No `git pull` is needed — the app code ships in the images. SQLite column migrations run automatically on backend startup, and the `mise_data` / `mise_uploads` volumes persist across updates.
+
+## Sharing recipes to MacroFactor
+
+Every recipe has an unauthenticated `GET /share/recipe/{id}` page ([backend/app/routers/share.py](backend/app/routers/share.py)) that embeds schema.org `Recipe` JSON-LD — title, ingredients, instructions, and macros when available — for MacroFactor's **"import recipe from URL"** feature. Clicking **Share to MacroFactor** on a recipe copies that page's URL to your clipboard.
+
+For an import to actually work, MacroFactor's own servers have to be able to fetch that URL directly, so:
+
+1. **Mise needs a real, public HTTPS URL.** A `localhost` or LAN-only address is reachable in your browser but not from MacroFactor's side — deploy behind a real domain (see Deployment above).
+2. **`/share/*` must be reachable without login.** Mise has no auth of its own, so if you've put anything in front of it — Cloudflare Access, Tailscale Funnel with auth, basic auth, a VPN-only ingress — that gate normally covers the whole app. MacroFactor's fetch isn't a browser session and can't complete a login, so if `/share/*` is behind it too, the import silently fails (it just fetches your login page instead of the recipe). Add an explicit bypass/exception for the `/share/` path specifically — e.g. in Cloudflare Access, a "bypass" policy scoped to `https://<your-domain>/share/*` — while keeping the rest of the app gated.
+3. **Macros need linked ingredients.** The share page only includes a `nutrition` block if at least one ingredient on the recipe is linked to an entry in the nutrition database (matched during import/add, or linked manually from the Ingredients page). Unlinked ingredients are just skipped from the total, not treated as zero — a recipe with no linked ingredients gets no `nutrition` block at all.
+4. **Uploaded photos are relative paths.** An image added via **Upload file** is stored and embedded as `/uploads/<file>` (relative to your domain), not an absolute URL. This renders fine in a normal browser view of the share page, but if MacroFactor's importer doesn't resolve relative image URLs against the page it fetched them from, the photo may not come through — pasting an external image URL via **Use URL** instead avoids the question entirely, since that's stored as a full URL already.
+
+Once those are in place: open the recipe → **Share to MacroFactor** → paste the copied link into MacroFactor's import-from-URL flow.
