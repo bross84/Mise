@@ -16,6 +16,7 @@ Personal recipe manager with serving scaling, per-recipe macro calculation, and 
 - **Meal planning** – add recipes to a meal plan and generate a consolidated shopping list.
 - **PDF library** – upload cookbook PDFs (up to 50 MB) to a central library and view them in-browser; not tied to a specific recipe.
 - **Sharing & export** – Markdown export/import, and a shareable recipe page that embeds schema.org Recipe metadata (with the calculated macros) so it can be pulled straight into [MacroFactor](https://macrofactorapp.com/)'s "import recipe from URL".
+- **Update notifications** – on load, the app checks the latest commit on this repo's `main` branch against the build you're running and shows a dismissible toast (with a link to the diff) if you're behind. Dismissing hides it until the next commit lands. Only present in images built by this repo's CI, which bakes in the commit SHA; local dev builds skip the check entirely.
 
 ## Screenshots
 

@@ -9,8 +9,11 @@ import Settings from './src/pages/Settings.jsx'
 import { useThemeContext } from './src/context/ThemeContext.jsx'
 import { MealPlanProvider } from './src/context/MealPlanContext.jsx'
 import UnitConverterModal from './src/components/UnitConverterModal.jsx'
+import UpdateToast from './src/components/UpdateToast.jsx'
 import { Sun, Moon, Monitor, Scale } from 'lucide-react'
 import { useState } from 'react'
+
+const GIT_SHA = import.meta.env.VITE_GIT_SHA || ''
 
 const navItems = [
   { label: 'Recipes', to: '/' },
@@ -195,10 +198,21 @@ function App() {
             </div>
           </div>
           <ThemeToggle />
+          {GIT_SHA && (
+            <a
+              href={`https://github.com/bross84/Mise/commit/${GIT_SHA}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block px-1 text-center text-[10px] text-mise-700 transition hover:text-mise-500"
+            >
+              {GIT_SHA.slice(0, 7)}
+            </a>
+          )}
         </div>
       </aside>
 
       {isConverterOpen && <UnitConverterModal onClose={() => setIsConverterOpen(false)} />}
+      <UpdateToast />
 
       <main className="min-h-screen px-4 pb-6 pt-20 lg:ml-64 lg:p-8">
         <Routes>
