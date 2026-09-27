@@ -9,7 +9,7 @@ import Settings from './src/pages/Settings.jsx'
 import { useThemeContext } from './src/context/ThemeContext.jsx'
 import { MealPlanProvider } from './src/context/MealPlanContext.jsx'
 import UnitConverterModal from './src/components/UnitConverterModal.jsx'
-import { Sun, Moon, Scale } from 'lucide-react'
+import { Sun, Moon, Monitor, Scale } from 'lucide-react'
 import { useState } from 'react'
 
 const navItems = [
@@ -21,35 +21,56 @@ const navItems = [
   { label: 'Settings', to: '/settings' },
 ]
 
+const THEME_OPTIONS = [
+  { value: 'system', label: 'System', icon: Monitor },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+]
+
 function ThemeToggle({ compact = false }) {
   const { theme, setTheme } = useThemeContext()
-  const isDark =
-    theme === 'dark' ||
-    (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   if (compact) {
+    const order = THEME_OPTIONS.map((o) => o.value)
+    const current = THEME_OPTIONS.find((o) => o.value === theme) ?? THEME_OPTIONS[0]
+    const next = THEME_OPTIONS[(order.indexOf(theme) + 1) % order.length]
+    const Icon = current.icon
     return (
       <button
         type="button"
-        onClick={() => setTheme(isDark ? 'light' : 'dark')}
-        aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        onClick={() => setTheme(next.value)}
+        aria-label={`Theme: ${current.label}. Switch to ${next.label}.`}
+        title={`Theme: ${current.label}`}
         className="rounded border border-mise-800 p-1.5 text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
       >
-        {isDark ? <Sun size={15} /> : <Moon size={15} />}
+        <Icon size={15} />
       </button>
     )
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      className="flex w-full items-center gap-2.5 rounded border border-mise-800 px-3 py-2 text-sm text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+    <div
+      role="radiogroup"
+      aria-label="Theme"
+      className="flex w-full items-center rounded border border-mise-800 text-xs font-medium"
     >
-      {isDark ? <Sun size={15} /> : <Moon size={15} />}
-      <span>{isDark ? 'Light mode' : 'Dark mode'}</span>
-    </button>
+      {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={theme === value}
+          onClick={() => setTheme(value)}
+          className={[
+            'flex flex-1 items-center justify-center gap-1.5 px-2 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember first:rounded-l last:rounded-r',
+            theme === value ? 'bg-mise-800 text-mise-300' : 'text-mise-500 hover:text-mise-300',
+          ].join(' ')}
+        >
+          <Icon size={14} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
   )
 }
 
