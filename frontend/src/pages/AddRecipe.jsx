@@ -135,17 +135,17 @@ function MatchedIngredientList({ matchResults, onRerun }) {
                 <span className="flex-1 text-sm text-mise-300">{toTitleCase(r.name)}</span>
                 <button
                   type="button"
-                  onClick={() => setSkippedIndexes((prev) => prev.includes(i) ? prev : [...prev, i])}
-                  className="rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300"
-                >
-                  Skip
-                </button>
-                <button
-                  type="button"
                   onClick={() => setOpenSearch(isOpen ? null : r.name)}
                   className="rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300"
                 >
                   {isOpen ? 'Cancel' : 'Search & Add'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSkippedIndexes((prev) => prev.includes(i) ? prev : [...prev, i])}
+                  className="rounded border border-mise-700 bg-mise-800/60 px-2.5 py-1 text-xs text-mise-300 transition hover:border-mise-600 hover:bg-mise-800"
+                >
+                  Skip
                 </button>
               </div>
               {isOpen && (
