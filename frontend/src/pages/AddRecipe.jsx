@@ -72,7 +72,7 @@ function parseAmount(str) {
 
 // ─── MatchedIngredientList ────────────────────────────────────────────────────
 
-function MatchedIngredientList({ matchResults, onRerun }) {
+function MatchedIngredientList({ matchResults, onRerun, onRename }) {
   const [openSearch, setOpenSearch] = useState(null)
   const [acceptedIndexes, setAcceptedIndexes] = useState([])
   const [skippedIndexes, setSkippedIndexes] = useState([])
@@ -127,15 +127,21 @@ function MatchedIngredientList({ matchResults, onRerun }) {
             )
           }
           const { result: r, index: i } = item
-          const isOpen = openSearch === r.name
+          const isOpen = openSearch === i
           return (
             <li key={item.key}>
               <div className="flex items-center gap-3 rounded border border-theme bg-mise-950/50 px-3 py-2">
                 <span className="text-sm">🔴</span>
-                <span className="flex-1 text-sm text-mise-300">{toTitleCase(r.name)}</span>
+                <input
+                  type="text"
+                  value={r.name}
+                  onChange={(e) => onRename(i, e.target.value)}
+                  aria-label={`Rename ingredient ${toTitleCase(r.name)}`}
+                  className="flex-1 rounded border border-transparent bg-transparent px-1.5 py-1 text-sm text-mise-300 transition hover:border-mise-800 focus:border-mise-700 focus:bg-mise-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                />
                 <button
                   type="button"
-                  onClick={() => setOpenSearch(isOpen ? null : r.name)}
+                  onClick={() => setOpenSearch(isOpen ? null : i)}
                   className="rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300"
                 >
                   {isOpen ? 'Cancel' : 'Search & Add'}
@@ -550,6 +556,20 @@ export default function AddRecipe() {
           {matching && <p className="mt-4 text-xs text-mise-500">Matching ingredients…</p>}
           <MatchedIngredientList
             matchResults={matchResults}
+            onRename={(index, newName) => {
+              setParsedIngredients((prev) => {
+                if (!prev[index]) return prev
+                const next = [...prev]
+                next[index] = { ...next[index], name: newName }
+                return next
+              })
+              setMatchResults((prev) => {
+                if (!prev?.[index]) return prev
+                const next = [...prev]
+                next[index] = { ...next[index], name: newName }
+                return next
+              })
+            }}
             onRerun={async (resultIndex, savedIngredient) => {
               if (resultIndex === undefined) {
                 await runMatching(parsedIngredients)
