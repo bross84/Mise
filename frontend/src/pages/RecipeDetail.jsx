@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { CalendarCheck, CalendarPlus, ChefHat, ChevronDown, ChevronUp, Copy, Download, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import AiAssistPanel from '../components/AiAssistPanel.jsx'
 import IngredientSearchPanel from '../components/IngredientSearchPanel.jsx'
+import RecipeImage from '../components/RecipeImage.jsx'
 import { toTitleCase } from '../utils/text.js'
 import { formatDecimal, parseDecimal } from '../utils/amounts.js'
 import { scaleIngredients, scaleMacroTotals, scalingChangesAmounts } from '../utils/scaling.js'
@@ -16,6 +17,7 @@ import {
   getIngredients,
   getRecipe,
   getRecipeMacros,
+  getSimilarRecipes,
   suggestTags,
   updateRecipe,
 } from '../api/client.js'
@@ -409,6 +411,7 @@ function CookMode({ recipe, scaledIngredients, steps, onExit }) {
 
 function RecipeDetail() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { id } = useParams()
   const { items: mealPlanItems, recipeIds: mealPlanRecipeIds, add: addToMealPlan, remove: removeFromMealPlan } = useMealPlan()
   const [addingToMealPlan, setAddingToMealPlan] = useState(false)
@@ -417,6 +420,7 @@ function RecipeDetail() {
   const [assistOpen, setAssistOpen] = useState(false)
   const [savingScale, setSavingScale] = useState(false)
   const [cookbooks, setCookbooks] = useState([])
+  const [similarRecipes, setSimilarRecipes] = useState([])
   const [recipe, setRecipe] = useState(null)
   const [mode, setMode] = useState('per-serving')
   // Per Serving mode: how many portions the recipe is split into
@@ -451,13 +455,15 @@ function RecipeDetail() {
         setLoading(true)
         setError('')
         setShowAllIngredients(false)
-        const [data, ingredientList, macroData, cookbookList] = await Promise.all([
+        const [data, ingredientList, macroData, cookbookList, similar] = await Promise.all([
           getRecipe(id),
           getIngredients(),
           getRecipeMacros(id).catch(() => null),
           getCookbooks().catch(() => []),
+          getSimilarRecipes(id).catch(() => []),
         ])
         setCookbooks(Array.isArray(cookbookList) ? cookbookList : [])
+        setSimilarRecipes(Array.isArray(similar) ? similar : [])
 
         if (!active) {
           return
@@ -472,6 +478,15 @@ function RecipeDetail() {
         setRecipe(data)
         setServings(data?.servings ?? 1)
         setScale(1)
+
+        if (location.state?.autoEdit) {
+          setDraft(recipeToDraft(data, map))
+          setOpenIngredientSearchId(null)
+          setTagInput('')
+          setSaveError('')
+          setEditing(true)
+          navigate(location.pathname, { replace: true, state: null })
+        }
       } catch (requestError) {
         if (!active) {
           return
@@ -830,7 +845,7 @@ function RecipeDetail() {
     setDuplicating(true)
     try {
       const copy = await duplicateRecipe(id)
-      navigate(`/recipe/${copy.id}`)
+      navigate(`/recipe/${copy.id}`, { state: { autoEdit: true } })
     } catch (err) {
       console.error('Failed to duplicate recipe:', err)
       window.alert('Failed to duplicate recipe. Please try again.')
@@ -1609,6 +1624,39 @@ function RecipeDetail() {
               </section>
             )}
           </div>
+
+          {similarRecipes.length > 0 && (
+            <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
+              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Similar Recipes</h2>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {similarRecipes.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => navigate(`/recipe/${r.id}`)}
+                    className="group flex flex-col overflow-hidden rounded border border-mise-800 bg-mise-950/50 text-left transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                  >
+                    <div className="relative h-20 w-full border-b border-mise-800 bg-mise-900" aria-hidden="true">
+                      <RecipeImage
+                        src={resolveUploadUrl(r.image_url)}
+                        className="h-full w-full object-cover"
+                        fallback={
+                          <div className="absolute inset-0 flex items-center justify-center text-xl text-mise-600">
+                            🍽️
+                          </div>
+                        }
+                      />
+                    </div>
+                    <div className="p-2.5">
+                      <p className="line-clamp-2 text-xs font-medium text-mise-300 transition group-hover:text-mise-200">
+                        {r.title}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
     </section>

@@ -58,6 +58,10 @@ export function getRecipeMacros(id) {
   return request(`/recipes/${encodeURIComponent(id)}/macros`)
 }
 
+export function getSimilarRecipes(id) {
+  return request(`/recipes/${encodeURIComponent(id)}/similar`)
+}
+
 export function createRecipe(data) {
   return request('/recipes', {
     method: 'POST',

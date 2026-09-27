@@ -897,6 +897,41 @@ def get_recipe_macros(recipe_id: int, db: Session = Depends(get_db)):
     return _compute_macros(recipe, db)
 
 
+def _tag_set(recipe: Recipe) -> set[str]:
+    return {t.strip().lower() for t in (recipe.tags or []) if isinstance(t, str) and t.strip()}
+
+
+def _linked_ingredient_ids(recipe: Recipe) -> set[int]:
+    return {
+        ing.get("ingredient_id")
+        for ing in (recipe.ingredients or [])
+        if isinstance(ing, dict) and ing.get("ingredient_id") is not None
+    }
+
+
+# Shared tags count for more than shared ingredients: a tag is a deliberate label, while an
+# ingredient overlap can be coincidental (e.g. both recipes use salt).
+@router.get("/{recipe_id}/similar", response_model=list[RecipeResponse])
+def get_similar_recipes(recipe_id: int, db: Session = Depends(get_db)):
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    tags = _tag_set(recipe)
+    ingredient_ids = _linked_ingredient_ids(recipe)
+
+    scored = []
+    for other in db.query(Recipe).filter(Recipe.id != recipe_id).all():
+        shared_tags = len(tags & _tag_set(other))
+        shared_ingredients = len(ingredient_ids & _linked_ingredient_ids(other))
+        score = shared_tags * 2 + shared_ingredients
+        if score > 0:
+            scored.append((score, other))
+
+    scored.sort(key=lambda pair: (-pair[0], (pair[1].title or "").lower()))
+    return [other for _, other in scored[:4]]
+
+
 class ShoppingListRequest(BaseModel):
     recipe_ids: list[int]
 
