@@ -1555,20 +1555,23 @@ function RecipeDetail() {
                               return (
                                 <li
                                   key={ingredient.id}
-                                  className="flex items-start justify-between gap-3 break-inside-avoid rounded border border-theme bg-mise-950/50 px-2.5 py-1.5"
+                                  className="flex h-[4.5rem] items-start justify-between gap-3 break-inside-avoid rounded border border-theme bg-mise-950/50 px-2.5 py-1.5"
                                 >
-                                  <div className="min-w-0">
-                                    <span className="text-sm text-mise-400">
+                                  <div className="flex h-full min-w-0 flex-col">
+                                    <div
+                                      className="line-clamp-2 text-sm leading-5 text-mise-400"
+                                      title={toTitleCase(ingredient.displayName)}
+                                    >
                                       {toTitleCase(ingredient.displayName)}
                                       {!ingredient.linkedToDb && (
                                         <span className="ml-1 text-[10px] opacity-40" title="Not linked to ingredient database">🔴</span>
                                       )}
-                                    </span>
+                                    </div>
                                     {macroLine !== null && (
-                                      <p className="mt-0.5 text-[10px] text-mise-600">{macroLine}</p>
+                                      <p className="mt-auto truncate text-[10px] leading-[15px] text-mise-600" title={macroLine}>{macroLine}</p>
                                     )}
                                   </div>
-                                  <span className="shrink-0 text-xs font-medium text-mise-300">
+                                  <span className="shrink-0 text-xs font-medium leading-5 text-mise-300">
                                     {ingredient.scaledAmount} {ingredient.unit}
                                   </span>
                                 </li>
