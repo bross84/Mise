@@ -1536,7 +1536,7 @@ function RecipeDetail() {
                   : scaledIngredients.slice(0, INGREDIENT_COLLAPSE_THRESHOLD)
                 return (
                   <>
-                    <div className="mt-4 columns-1 gap-4 space-y-3 sm:columns-2">
+                    <div className="mt-4 space-y-3">
                       {groupIngredients(visible).map((section, si) => (
                         <div key={`${section.name ?? "ungrouped"}-${si}`}>
                           {section.name && (
@@ -1544,7 +1544,7 @@ function RecipeDetail() {
                               {section.name}
                             </h3>
                           )}
-                          <ul className="space-y-1.5">
+                          <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
                             {section.items.map((ingredient) => {
                               const bd = ingredient.breakdown
                               const macroLine = bd
@@ -1555,7 +1555,7 @@ function RecipeDetail() {
                               return (
                                 <li
                                   key={ingredient.id}
-                                  className="flex h-[4.5rem] items-start justify-between gap-3 break-inside-avoid rounded border border-theme bg-mise-950/50 px-2.5 py-1.5"
+                                  className="flex h-[4.5rem] items-start justify-between gap-3 rounded border border-theme bg-mise-950/50 px-2.5 py-1.5"
                                 >
                                   <div className="flex h-full min-w-0 flex-col">
                                     <div
