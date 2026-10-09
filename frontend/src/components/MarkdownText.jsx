@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
+import remarkGfm from 'remark-gfm'
 
 const mdComponents = {
   h1: ({ children }) => (
@@ -50,6 +51,17 @@ const mdComponents = {
     <code className="rounded bg-mise-800 px-1 py-0.5 text-xs text-mise-300">{children}</code>
   ),
   hr: () => <hr className="border-mise-800" />,
+  table: ({ children }) => (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-left text-sm text-mise-400">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="border-b border-mise-700">{children}</thead>,
+  tr: ({ children }) => <tr className="border-b border-mise-800 last:border-b-0">{children}</tr>,
+  th: ({ children }) => (
+    <th className="px-2 py-1.5 align-bottom font-semibold text-mise-300">{children}</th>
+  ),
+  td: ({ children }) => <td className="px-2 py-1.5 align-top">{children}</td>,
 }
 
 // CommonMark setext headings: `text\n---` is an h2, not a thematic break.
@@ -66,7 +78,7 @@ export function MarkdownText({ text }) {
   if (!text?.trim()) return null
   return (
     <div className="space-y-3">
-      <ReactMarkdown remarkPlugins={[remarkBreaks]} components={mdComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
         {normalizeHr(text)}
       </ReactMarkdown>
     </div>
