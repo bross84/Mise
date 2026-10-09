@@ -245,7 +245,11 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
                   ) : (
                     <div key={s.id} className="mt-2 rounded border border-theme bg-mise-900 p-3">
                       <p className="text-sm font-medium text-mise-300">{s.title}</p>
-                      {s.rationale && <p className="mt-0.5 text-[11px] text-mise-500">{s.rationale}</p>}
+                      {s.rationale && (
+                        <div className="mt-1.5 text-mise-500">
+                          <MarkdownText text={s.rationale} />
+                        </div>
+                      )}
                     </div>
                   ),
                 )}
