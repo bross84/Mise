@@ -74,12 +74,19 @@ function normalizeHr(text) {
   )
 }
 
+// LLMs often emit typographic spaces (narrow no-break, thin, figure, etc.)
+// around numbers and dashes; Space Grotesk renders them nearly flush, so
+// "1 Tbsp" reads as "1Tbsp". Collapse them to plain spaces.
+function normalizeSpaces(text) {
+  return text.replace(/[^\S\n\r\t]/g, ' ')
+}
+
 export function MarkdownText({ text }) {
   if (!text?.trim()) return null
   return (
     <div className="space-y-3">
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
-        {normalizeHr(text)}
+        {normalizeHr(normalizeSpaces(text))}
       </ReactMarkdown>
     </div>
   )
