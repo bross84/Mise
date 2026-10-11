@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles, X } from 'lucide-react'
 import { aiEditRecipe, updateRecipe } from '../api/client.js'
-import { buildUpdatePayload } from './aiChanges.js'
+import { buildUpdatePayload, unmatchedChanges } from './aiChanges.js'
 import AiChangeCard from './AiChangeCard.jsx'
 import { MarkdownText } from './MarkdownText.jsx'
+
+// Applying a change whose ingredient isn't in the recipe would silently do nothing while the
+// panel reported "Applied". Refuse instead so the cook knows.
+function assertChangesMatch(recipe, accepted) {
+  const missing = unmatchedChanges(recipe, accepted)
+  if (!missing.length) return
+  console.warn('AI changes target ingredients not in this recipe', missing, recipe?.ingredients)
+  throw new Error(
+    `${missing.length} of ${accepted.length} changes don’t match this recipe’s ingredients — reload the page and try again.`,
+  )
+}
 
 let msgSeq = 0
 const nextId = () => `m${Date.now()}-${(msgSeq += 1)}`
@@ -76,6 +87,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
     if (!accepted.length) return
     setMessages((m) => m.map((x) => (x.id === msgId ? { ...x, busy: true } : x)))
     try {
+      assertChangesMatch(recipe, accepted)
       const { payload } = buildUpdatePayload(recipe, accepted)
       const updated = await updateRecipe(recipeId, payload)
       onApplied?.(updated)
@@ -125,6 +137,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
     if (!accepted.length) return
     setSuggestionStatus(msgId, suggestionId, { busy: true })
     try {
+      assertChangesMatch(recipe, accepted)
       const { payload } = buildUpdatePayload(recipe, accepted)
       const updated = await updateRecipe(recipeId, payload)
       onApplied?.(updated)
