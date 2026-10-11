@@ -29,6 +29,20 @@ function normalizeIngredient(ing) {
   }
 }
 
+const sameId = (a, b) => a != null && b != null && String(a) === String(b)
+
+// Accepted ingredient updates/removes whose target isn't in the recipe. Applying them would
+// silently do nothing, so callers use this to refuse instead of reporting success.
+export function unmatchedChanges(recipe, accepted) {
+  const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients : []
+  return accepted.filter(
+    (c) =>
+      c.field === 'ingredients' &&
+      (c.op === 'update' || c.op === 'remove') &&
+      !ingredients.some((ing) => sameId(ing.id, c.target_id)),
+  )
+}
+
 export function applyChanges(recipe, accepted) {
   const next = cloneRecipe(recipe)
   next.ingredients = Array.isArray(next.ingredients) ? next.ingredients : []
@@ -37,7 +51,7 @@ export function applyChanges(recipe, accepted) {
     if (change.field === 'ingredients') {
       if (change.op === 'update' && change.target_id) {
         next.ingredients = next.ingredients.map((ing) =>
-          ing.id === change.target_id ? { ...ing, ...(change.after || {}) } : ing,
+          sameId(ing.id, change.target_id) ? { ...ing, ...(change.after || {}), id: ing.id } : ing,
         )
       } else if (change.op === 'add' && change.after) {
         const newIng = { ...change.after, id: change.after.id || tempIngredientId() }
@@ -61,7 +75,7 @@ export function applyChanges(recipe, accepted) {
           ...next.ingredients.slice(insertAt),
         ]
       } else if (change.op === 'remove' && change.target_id) {
-        next.ingredients = next.ingredients.filter((ing) => ing.id !== change.target_id)
+        next.ingredients = next.ingredients.filter((ing) => !sameId(ing.id, change.target_id))
       }
     } else if (change.op === 'update' && SCALAR_FIELDS.includes(change.field)) {
       next[change.field] = change.after
