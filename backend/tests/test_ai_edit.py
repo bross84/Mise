@@ -106,7 +106,7 @@ class AiEditModeTests(unittest.TestCase):
             "changes": [],
             "suggestions": [],
         })
-        res, _ = self.ai_edit(model_json, instruction="convert to grams", draft=True)
+        res, _ = self.ai_edit(model_json, instruction="weigh the oil instead", draft=True)
         self.assertEqual(res.status_code, 200, res.text)
         changes = res.json()["changes"]
         self.assertEqual(len(changes), 1)
@@ -122,7 +122,7 @@ class AiEditModeTests(unittest.TestCase):
             "changes": [],
             "suggestions": [],
         })
-        res, _ = self.ai_edit(model_json, instruction="convert to grams", draft=True)
+        res, _ = self.ai_edit(model_json, instruction="weigh the oil instead", draft=True)
         self.assertEqual([c["op"] for c in res.json()["changes"]], ["update"])
 
     def test_listed_changes_win_over_proposed(self):
@@ -137,6 +137,67 @@ class AiEditModeTests(unittest.TestCase):
         changes = res.json()["changes"]
         self.assertEqual(len(changes), 1)
         self.assertEqual(changes[0]["after"], "From changes")
+
+    def _grams_recipe(self):
+        res = self.client.patch(f"/api/recipes/{self.recipe_id}", json={
+            "ingredients": [
+                {"id": "a", "name": "Olive oil", "amount": 1, "unit": "tbsp"},
+                {"id": "b", "name": "Flour", "amount": 250, "unit": "g"},
+                {"id": "c", "name": "Cayenne", "amount": 0.5, "unit": "tsp"},
+                {"id": "d", "name": "Chicken", "amount": 1, "unit": "lb"},
+                {"id": "e", "name": "Garlic", "amount": 2, "unit": "clove"},
+                {"id": "f", "name": "Cumin", "amount": 1, "unit": "tsp"},
+            ],
+        })
+        self.assertEqual(res.status_code, 200, res.text)
+        return {i["name"]: i["id"] for i in res.json()["ingredients"]}
+
+    def test_grams_request_converts_every_non_metric_ingredient(self):
+        ids = self._grams_recipe()
+        model_json = json.dumps({"items": [
+            {"id": ids["Olive oil"], "grams": 13.5},
+            {"id": ids["Cayenne"], "grams": 1.2},
+            {"id": ids["Chicken"], "grams": 453.6},
+            {"id": ids["Cumin"], "grams": 2.1},
+        ]})
+        res, calls = self.ai_edit(model_json, instruction="Change all non-metric units to grams", draft=True)
+        self.assertEqual(res.status_code, 200, res.text)
+        changes = res.json()["changes"]
+        self.assertEqual({c["target_id"] for c in changes},
+                         {ids["Olive oil"], ids["Cayenne"], ids["Chicken"], ids["Cumin"]})
+        by_target = {c["target_id"]: c["after"] for c in changes}
+        self.assertEqual(by_target[ids["Olive oil"]], {"amount": 14.0, "unit": "g"})
+        self.assertEqual(by_target[ids["Chicken"]], {"amount": 454.0, "unit": "g"})
+        self.assertEqual(by_target[ids["Cayenne"]], {"amount": 1.2, "unit": "g"})
+        # Only the non-metric ones are sent to the model; grams and count units are left alone.
+        sent = json.loads(calls[0]["messages"][1]["content"])
+        self.assertEqual({i["name"] for i in sent}, {"Olive oil", "Cayenne", "Chicken", "Cumin"})
+        self.assertIn("Converted 4 of 4", res.json()["reply"])
+
+    def test_grams_request_names_ingredients_the_model_did_not_weigh(self):
+        ids = self._grams_recipe()
+        model_json = json.dumps({"items": [
+            {"id": ids["Olive oil"], "grams": 14},
+            {"id": ids["Cayenne"], "grams": None},
+        ]})
+        res, _ = self.ai_edit(model_json, instruction="convert everything to grams", draft=True)
+        data = res.json()
+        self.assertEqual(len(data["changes"]), 1)
+        self.assertIn("Converted 1 of 4", data["reply"])
+        self.assertIn("Cayenne", data["reply"])
+        self.assertIn("Chicken", data["reply"])
+
+    def test_grams_request_with_nothing_to_convert_skips_the_model(self):
+        res, calls = self.ai_edit("unused", instruction="convert everything to grams", draft=True)
+        self.assertEqual(res.json()["changes"], [])
+        self.assertIn("Nothing to convert", res.json()["reply"])
+        self.assertEqual(calls, [])
+
+    def test_unrelated_draft_does_not_use_the_grams_path(self):
+        self._grams_recipe()
+        res, calls = self.ai_edit(EAGER_MODEL_JSON, instruction="rename it", draft=True)
+        self.assertEqual(len(res.json()["changes"]), 1)
+        self.assertIn("Draft change", calls[0]["messages"][0]["content"])
 
 
 if __name__ == "__main__":

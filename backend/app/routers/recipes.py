@@ -490,6 +490,14 @@ what the cook asked for, nothing bundled in that you merely noticed along the wa
 Never invent a constraint (measurement precision, equipment limits, ingredient behavior) to justify a change \
 unless it's stated in the recipe data or the cook's own words. Leave "suggestions" as [].
 
+"Smallest set" means no extras, not partial coverage. When the cook's request applies to all or every ingredient \
+of some kind ("convert everything to grams", "make them all metric", "swap every X"), go through the \
+"ingredients" array one entry at a time, in order, and emit a change for EVERY ingredient the request covers — \
+not a sample, not the first few. Before answering, recount the ingredients you did not change and confirm none of \
+them qualifies. For unit conversions, an ingredient already in g, kg, ml or l is done; everything else (tsp, \
+tbsp, cup, oz, lb, fl oz, pinch, clove, piece, etc.) must be converted using that ingredient's real density or \
+typical piece weight, and your "reply" must name any you could not convert and why.
+
 If the cook asks for options to choose between ("give me options", "draft a couple of ways"), use \
 "suggestions" instead, and leave "changes" as []. For a broad ask ("draft your version") with no narrow focus, \
 lead with ONE comprehensive suggestion that bundles every complementary fix together — a full "here's the \
@@ -651,7 +659,12 @@ def _build_edit_messages(recipe_json: dict, conversation: list, instruction: str
     ]
     for turn in (conversation or [])[-8:]:
         messages.append({"role": turn.role, "content": turn.content})
-    messages.append({"role": "user", "content": f"Instruction: {instruction}"})
+    count = len(recipe_json.get("ingredients") or [])
+    messages.append({
+        "role": "user",
+        "content": f"Instruction: {instruction}\n\n[The recipe has {count} ingredients. If this applies to all or "
+                   f"every ingredient, check each of the {count} and include a change for each one it covers.]",
+    })
     return messages
 
 
@@ -847,6 +860,103 @@ def _normalize_edit(recipe: Recipe, data: dict) -> AiEditResponse:
     return AiEditResponse(reply=reply, proposed=proposed, changes=changes, suggestions=suggestions)
 
 
+_NON_METRIC_UNITS = {
+    "tsp", "teaspoon", "teaspoons", "tbsp", "tablespoon", "tablespoons",
+    "cup", "cups", "oz", "ounce", "ounces", "fl oz", "fluid ounce", "fluid ounces",
+    "lb", "lbs", "pound", "pounds", "pint", "pints", "quart", "quarts", "gallon", "gallons",
+    "pinch", "pinches", "dash", "dashes",
+}
+
+_GRAMS_CONVERSION_PROMPT = """You convert recipe ingredient amounts to grams. You get a JSON list of ingredients, \
+each with an "id", "name", "amount" and "unit". For EVERY entry, work out how many grams that amount weighs, using \
+that specific ingredient's real density or typical weight (a tablespoon of olive oil is not a tablespoon of flour; \
+a teaspoon of salt is not a teaspoon of cayenne). Do not skip any entry and do not add any.
+
+Return ONLY a JSON object: {"items": [{"id": "<same id>", "grams": <number>}]}. One item per input entry, same ids. \
+"grams" is a number for the whole amount, not per unit. If an ingredient truly cannot be weighed, use null."""
+
+
+def _is_grams_conversion_request(instruction: str) -> bool:
+    text = instruction.lower()
+    wants_grams = bool(re.search(r"\bgrams?\b|\bmetric\b", text))
+    wants_change = bool(re.search(r"\b(convert|change|update|switch|make|turn|put|use|swap)\b", text))
+    return wants_grams and wants_change
+
+
+def _is_non_metric(ing: dict) -> bool:
+    unit = re.sub(r"\s+", " ", str(ing.get("unit") or "").lower().replace(".", "")).strip()
+    try:
+        amount = float(ing.get("amount") or 0)
+    except (TypeError, ValueError):
+        return False
+    return unit in _NON_METRIC_UNITS and amount > 0
+
+
+def _round_grams(grams: float) -> float:
+    return round(grams, 1) if grams < 10 else float(round(grams))
+
+
+async def _draft_grams_conversion(recipe: Recipe) -> AiEditResponse:
+    """Convert every tsp/tbsp/cup/oz/lb ingredient to grams.
+
+    The server picks the ingredients (so none is skipped) and the model only supplies each one's weight.
+    """
+    existing = {str(i.get("id")): i for i in (recipe.ingredients or []) if i.get("id") is not None}
+    targets = [i for i in existing.values() if _is_non_metric(i)]
+    if not targets:
+        return AiEditResponse(reply="Nothing to convert: no ingredient is in a non-metric volume or weight unit.")
+
+    listing = [
+        {"id": str(i["id"]), "name": i.get("name"), "amount": i.get("amount"), "unit": i.get("unit")}
+        for i in targets
+    ]
+    raw = await AIService()._call(
+        [
+            {"role": "system", "content": _GRAMS_CONVERSION_PROMPT},
+            {"role": "user", "content": json.dumps(listing, ensure_ascii=False)},
+        ],
+        response_format={"type": "json_object"},
+    )
+    try:
+        items = _parse_json_block(raw).get("items")
+    except ValueError as exc:
+        raise RuntimeError(f"AI returned invalid JSON: {exc}") from exc
+
+    grams_by_id: dict[str, float] = {}
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            grams = float(item.get("grams"))
+        except (TypeError, ValueError):
+            continue
+        if grams > 0:
+            grams_by_id[str(item.get("id"))] = grams
+
+    raw_changes: list[dict] = []
+    unconverted: list[str] = []
+    for ing in targets:
+        ing_id = str(ing["id"])
+        grams = grams_by_id.get(ing_id)
+        if grams is None:
+            unconverted.append(str(ing.get("name") or ing_id))
+            continue
+        new_amount = _round_grams(grams)
+        before = {"amount": ing.get("amount"), "unit": ing.get("unit")}
+        raw_changes.append({
+            "op": "update", "field": "ingredients", "target_id": ing_id,
+            "label": f"{ing.get('name')} — {ing.get('amount')} {ing.get('unit')} → {new_amount:g} g",
+            "before": before, "after": {"amount": new_amount, "unit": "g"},
+            "why": "Converted to grams using an estimated density for this ingredient.",
+        })
+
+    changes, _ = _normalize_change_list(recipe, existing, raw_changes, 0)
+    reply = f"Converted {len(changes)} of {len(targets)} non-metric ingredients to grams."
+    if unconverted:
+        reply += " Couldn't weigh: " + ", ".join(unconverted) + "."
+    return AiEditResponse(reply=reply, changes=changes)
+
+
 @router.post("/{recipe_id}/ai-edit", response_model=AiEditResponse)
 async def ai_edit_recipe(recipe_id: int, payload: AiEditRequest, db: Session = Depends(get_db)):
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
@@ -873,6 +983,15 @@ async def ai_edit_recipe(recipe_id: int, payload: AiEditRequest, db: Session = D
             logger.error("AI chat failed: %s", exc)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         return AiEditResponse(reply=reply)
+
+    if _is_grams_conversion_request(instruction):
+        try:
+            return await _draft_grams_conversion(recipe)
+        except ValueError as exc:  # missing API key
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            logger.error("AI grams conversion failed: %s", exc)
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     messages = _build_edit_messages(recipe_json, payload.conversation, instruction)
 
