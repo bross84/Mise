@@ -1,4 +1,5 @@
 import io
+import difflib
 import json
 import logging
 import math
@@ -871,7 +872,7 @@ _NON_METRIC_UNITS = {
 _GRAMS_CONVERSION_PROMPT = """You convert recipe ingredient amounts to grams. You get a JSON list of ingredients, \
 each with an "id", "name", "amount" and "unit". For EVERY entry, work out how many grams that amount weighs, using \
 that specific ingredient's real density or typical weight (a tablespoon of olive oil is not a tablespoon of flour; \
-a teaspoon of salt is not a teaspoon of cayenne). Do not skip any entry and do not add any.
+a teaspoon of salt is not a teaspoon of cayenne). A "unit" of ml means volume, so use that ingredient's density. A count unit (ea, each, clove, large, medium, piece) or a blank unit means whole items, so use the typical weight of one. Do not skip any entry and do not add any.
 
 Return ONLY a JSON object: {"items": [{"id": "<same id>", "grams": <number>}]}. One item per input entry, same ids. \
 "grams" is a number for the whole amount, not per unit. If an ingredient truly cannot be weighed, use null."""
@@ -882,7 +883,7 @@ _ROUNDABLE_UNITS = {"g", "gram", "grams", "ml", "milliliter", "milliliters", "mi
 
 def _is_rounding_request(instruction: str) -> bool:
     text = instruction.lower()
-    if not re.search(r"(?<![a-z])(?:round|rounded|rounding)(?![a-z])", text):
+    if not _says(text, "round"):
         return False
     # Conversions and scaling need the model; plain "round ... to whole numbers/grams" does not.
     if re.search(r"(?<![a-z])(?:convert|converted|non-metric|tsp|tbsp|cups?|oz|scale|double|halve)(?![a-z])", text):
@@ -924,35 +925,80 @@ def _draft_rounding(recipe: Recipe, instruction: str) -> AiEditResponse:
     return AiEditResponse(reply=f"Rounded {len(changes)} amounts {'up ' if mode == 'up' else 'down ' if mode == 'down' else ''}to whole numbers.", changes=changes)
 
 
+def _says(text: str, *words: str, cutoff: float = 0.82) -> bool:
+    """True if any word in `text` is (a typo of, or starts with) one of `words`: 'covert' ~ 'convert'."""
+    for token in re.findall("[a-z]+", text.lower()):
+        for word in words:
+            if token[:1] == word[:1] and (
+                token.startswith(word) or difflib.SequenceMatcher(None, token, word).ratio() >= cutoff
+            ):
+                return True
+    return False
+
+
 def _is_grams_conversion_request(instruction: str) -> bool:
     text = instruction.lower()
-    wants_grams = bool(re.search(r"\bgrams?\b|\bmetric\b", text))
-    wants_change = bool(re.search(r"\b(convert|change|update|switch|make|turn|put|use|swap)\b", text))
-    return wants_grams and wants_change
+    if _says(text, "convert", "conversion", "metric", "imperial"):
+        return True
+    if re.search(r"(?<![a-z])non-?gram", text) or re.search(r"(?<![a-z])(?:to|into|in)[ ]+gram", text):
+        return True
+    # "...to gramz": a typo'd 'grams' right after to/into/in
+    tokens = re.findall("[a-z]+", text)
+    return any(
+        tokens[i] in ("to", "into", "in") and _says(tokens[i + 1], "grams", "gram")
+        for i in range(len(tokens) - 1)
+    )
 
 
-def _is_non_metric(ing: dict) -> bool:
-    unit = re.sub(r"\s+", " ", str(ing.get("unit") or "").lower().replace(".", "")).strip()
+def _is_strict_non_gram(instruction: str) -> bool:
+    """'non-gram' / 'not in grams' means everything that isn't grams: ml, counts ('1 ea') and blanks too."""
+    text = instruction.lower()
+    return bool(re.search(r"(?<![a-z])non-?gram", text) or re.search(r"(?<![a-z])not[ ]+in[ ]+gram", text))
+
+
+def _rounding_mode(text: str):
+    if not _says(text, "round"):
+        return None
+    if re.search(r"(?<![a-z])(?:up|ceil|ceiling)(?![a-z])", text):
+        return "up"
+    if re.search(r"(?<![a-z])(?:down|floor)(?![a-z])", text):
+        return "down"
+    return "nearest"
+
+
+_ROUNDERS = {
+    "up": lambda x: math.ceil(x - 1e-9),
+    "down": lambda x: math.floor(x + 1e-9),
+    "nearest": lambda x: math.floor(x + 0.5),
+}
+
+
+def _needs_grams(ing: dict, strict: bool) -> bool:
+    unit = re.sub(r"[ ]+", " ", str(ing.get("unit") or "").lower().replace(".", "")).strip()
     try:
         amount = float(ing.get("amount") or 0)
     except (TypeError, ValueError):
         return False
-    return unit in _NON_METRIC_UNITS and amount > 0
+    if amount <= 0 or unit in ("g", "gram", "grams"):
+        return False
+    return True if strict else unit in _NON_METRIC_UNITS
 
 
 def _round_grams(grams: float) -> float:
     return round(grams, 1) if grams < 10 else float(round(grams))
 
 
-async def _draft_grams_conversion(recipe: Recipe) -> AiEditResponse:
+async def _draft_grams_conversion(recipe: Recipe, instruction: str) -> AiEditResponse:
     """Convert every tsp/tbsp/cup/oz/lb ingredient to grams.
 
     The server picks the ingredients (so none is skipped) and the model only supplies each one's weight.
     """
     existing = {str(i.get("id")): i for i in (recipe.ingredients or []) if i.get("id") is not None}
-    targets = [i for i in existing.values() if _is_non_metric(i)]
+    strict = _is_strict_non_gram(instruction)
+    mode = _rounding_mode(instruction.lower())
+    targets = [i for i in existing.values() if _needs_grams(i, strict)]
     if not targets:
-        return AiEditResponse(reply="Nothing to convert: no ingredient is in a non-metric volume or weight unit.")
+        return AiEditResponse(reply="Nothing to convert: every ingredient is already in grams.")
 
     listing = [
         {"id": str(i["id"]), "name": i.get("name"), "amount": i.get("amount"), "unit": i.get("unit")}
@@ -990,6 +1036,9 @@ async def _draft_grams_conversion(recipe: Recipe) -> AiEditResponse:
             unconverted.append(str(ing.get("name") or ing_id))
             continue
         new_amount = _round_grams(grams)
+        if mode:
+            rounded = _ROUNDERS[mode](grams)
+            new_amount = float(rounded) if rounded > 0 else new_amount
         before = {"amount": ing.get("amount"), "unit": ing.get("unit")}
         raw_changes.append({
             "op": "update", "field": "ingredients", "target_id": ing_id,
@@ -999,7 +1048,8 @@ async def _draft_grams_conversion(recipe: Recipe) -> AiEditResponse:
         })
 
     changes, _ = _normalize_change_list(recipe, existing, raw_changes, 0)
-    reply = f"Converted {len(changes)} of {len(targets)} non-metric ingredients to grams."
+    reply = f"Converted {len(changes)} of {len(targets)} ingredients to grams"
+    reply += f", rounded {mode} to whole numbers." if mode else "."
     if unconverted:
         reply += " Couldn't weigh: " + ", ".join(unconverted) + "."
     return AiEditResponse(reply=reply, changes=changes)
@@ -1032,17 +1082,17 @@ async def ai_edit_recipe(recipe_id: int, payload: AiEditRequest, db: Session = D
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         return AiEditResponse(reply=reply)
 
-    if _is_rounding_request(instruction):
-        return _draft_rounding(recipe, instruction)
-
     if _is_grams_conversion_request(instruction):
         try:
-            return await _draft_grams_conversion(recipe)
+            return await _draft_grams_conversion(recipe, instruction)
         except ValueError as exc:  # missing API key
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
             logger.error("AI grams conversion failed: %s", exc)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if _is_rounding_request(instruction):
+        return _draft_rounding(recipe, instruction)
 
     messages = _build_edit_messages(recipe_json, payload.conversation, instruction)
 
