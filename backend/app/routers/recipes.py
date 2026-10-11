@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import math
 import re
 import uuid
 import zipfile
@@ -876,6 +877,53 @@ Return ONLY a JSON object: {"items": [{"id": "<same id>", "grams": <number>}]}. 
 "grams" is a number for the whole amount, not per unit. If an ingredient truly cannot be weighed, use null."""
 
 
+_ROUNDABLE_UNITS = {"g", "gram", "grams", "ml", "milliliter", "milliliters", "millilitre", "millilitres"}
+
+
+def _is_rounding_request(instruction: str) -> bool:
+    text = instruction.lower()
+    if not re.search(r"(?<![a-z])(?:round|rounded|rounding)(?![a-z])", text):
+        return False
+    # Conversions and scaling need the model; plain "round ... to whole numbers/grams" does not.
+    if re.search(r"(?<![a-z])(?:convert|converted|non-metric|tsp|tbsp|cups?|oz|scale|double|halve)(?![a-z])", text):
+        return False
+    if not re.search(r"(?<![a-z])(?:all|every|each|everything|ingredients|amounts|numbers)(?![a-z])", text):
+        return False  # "round the oil to 5g" is a specific edit, not a round-everything request
+    return bool(re.search(r"(?<![a-z])(?:whole|nearest|decimal|grams?|g|integers?|ints?)(?![a-z])|x[.]0", text))
+
+
+def _draft_rounding(recipe: Recipe, instruction: str) -> AiEditResponse:
+    """Round every g/ml ingredient amount to a whole number. Pure arithmetic: no model, nothing skipped."""
+    text = instruction.lower()
+    mode = "up" if re.search(r"(?<![a-z])(?:up|ceil|ceiling)(?![a-z])", text) else "down" if re.search(r"(?<![a-z])(?:down|floor)(?![a-z])", text) else "nearest"
+    rounders = {"up": lambda x: math.ceil(x - 1e-9), "down": lambda x: math.floor(x + 1e-9), "nearest": lambda x: math.floor(x + 0.5)}
+
+    existing = {str(i.get("id")): i for i in (recipe.ingredients or []) if i.get("id") is not None}
+    raw_changes: list[dict] = []
+    for ing_id, ing in existing.items():
+        unit = str(ing.get("unit") or "").strip().lower()
+        try:
+            amount = float(ing.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+        if unit not in _ROUNDABLE_UNITS or amount <= 0:
+            continue
+        new_amount = rounders[mode](amount)
+        if new_amount == amount or new_amount <= 0:
+            continue
+        raw_changes.append({
+            "op": "update", "field": "ingredients", "target_id": ing_id,
+            "label": f"{ing.get('name')} — {amount:g} {ing.get('unit')} → {new_amount:g} {ing.get('unit')}",
+            "before": {"amount": ing.get("amount")}, "after": {"amount": float(new_amount)},
+            "why": f"Rounded {mode if mode != 'nearest' else 'to the nearest'} whole number.",
+        })
+
+    changes, _ = _normalize_change_list(recipe, existing, raw_changes, 0)
+    if not changes:
+        return AiEditResponse(reply="Nothing to round: every gram and ml amount is already a whole number.")
+    return AiEditResponse(reply=f"Rounded {len(changes)} amounts {'up ' if mode == 'up' else 'down ' if mode == 'down' else ''}to whole numbers.", changes=changes)
+
+
 def _is_grams_conversion_request(instruction: str) -> bool:
     text = instruction.lower()
     wants_grams = bool(re.search(r"\bgrams?\b|\bmetric\b", text))
@@ -983,6 +1031,9 @@ async def ai_edit_recipe(recipe_id: int, payload: AiEditRequest, db: Session = D
             logger.error("AI chat failed: %s", exc)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         return AiEditResponse(reply=reply)
+
+    if _is_rounding_request(instruction):
+        return _draft_rounding(recipe, instruction)
 
     if _is_grams_conversion_request(instruction):
         try:

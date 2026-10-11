@@ -199,6 +199,49 @@ class AiEditModeTests(unittest.TestCase):
         self.assertEqual(len(res.json()["changes"]), 1)
         self.assertIn("Draft change", calls[0]["messages"][0]["content"])
 
+    def _rounding_recipe(self):
+        res = self.client.patch(f"/api/recipes/{self.recipe_id}", json={
+            "ingredients": [
+                {"id": "a", "name": "Oil", "amount": 4.6, "unit": "g"},
+                {"id": "b", "name": "Paprika", "amount": 7.5, "unit": "g"},
+                {"id": "c", "name": "Salt", "amount": 6, "unit": "g"},
+                {"id": "d", "name": "Pepper", "amount": 0.6, "unit": "g"},
+                {"id": "e", "name": "Milk", "amount": 120.4, "unit": "ml"},
+                {"id": "f", "name": "Cumin", "amount": 1.5, "unit": "tsp"},
+            ],
+        })
+        self.assertEqual(res.status_code, 200, res.text)
+
+    def test_round_up_request_rounds_every_gram_and_ml_amount_without_the_model(self):
+        self._rounding_recipe()
+        res, calls = self.ai_edit("unused", instruction="round up all ingredients to x.0 grams example 4.6 goes to 5g", draft=True)
+        self.assertEqual(res.status_code, 200, res.text)
+        by_target = {c["target_id"]: c["after"]["amount"] for c in res.json()["changes"]}
+        self.assertEqual(by_target, {"a": 5.0, "b": 8.0, "d": 1.0, "e": 121.0})
+        self.assertEqual(calls, [])
+        self.assertIn("Rounded 4 amounts up", res.json()["reply"])
+
+    def test_round_down_and_nearest(self):
+        self._rounding_recipe()
+        res, _ = self.ai_edit("unused", instruction="round all grams down to whole numbers", draft=True)
+        self.assertEqual({c["target_id"]: c["after"]["amount"] for c in res.json()["changes"]},
+                         {"a": 4.0, "b": 7.0, "e": 120.0})
+        res, _ = self.ai_edit("unused", instruction="round all grams to the nearest whole number", draft=True)
+        self.assertEqual({c["target_id"]: c["after"]["amount"] for c in res.json()["changes"]},
+                         {"a": 5.0, "b": 8.0, "d": 1.0, "e": 120.0})
+
+    def test_rounding_with_nothing_to_round(self):
+        res, calls = self.ai_edit("unused", instruction="round up all grams to whole numbers", draft=True)
+        self.assertEqual(res.json()["changes"], [])
+        self.assertIn("Nothing to round", res.json()["reply"])
+        self.assertEqual(calls, [])
+
+    def test_round_plus_convert_still_goes_to_the_model_path(self):
+        self._rounding_recipe()
+        res, calls = self.ai_edit(json.dumps({"items": [{"id": "f", "grams": 3}]}),
+                                  instruction="convert tsp to grams and round them", draft=True)
+        self.assertEqual(len(calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
