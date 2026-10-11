@@ -85,6 +85,59 @@ class AiEditModeTests(unittest.TestCase):
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
         self.assertIn("Draft change", calls[0]["messages"][0]["content"])
 
+    def _recipe_with_ingredients(self):
+        res = self.client.patch(f"/api/recipes/{self.recipe_id}", json={
+            "ingredients": [
+                {"id": "ing-1", "name": "Olive oil", "amount": 1, "unit": "tbsp"},
+                {"id": "ing-2", "name": "Flour", "amount": 250, "unit": "g"},
+            ],
+        })
+        self.assertEqual(res.status_code, 200, res.text)
+        return [i["id"] for i in res.json()["ingredients"]]
+
+    def test_draft_derives_changes_from_proposed_when_changes_is_empty(self):
+        oil_id, flour_id = self._recipe_with_ingredients()
+        model_json = json.dumps({
+            "reply": "Converted tbsp to grams.",
+            "proposed": {"ingredients": [
+                {"id": oil_id, "name": "Olive oil", "amount": 14, "unit": "g"},
+                {"id": flour_id, "name": "Flour", "amount": 250, "unit": "g"},
+            ]},
+            "changes": [],
+            "suggestions": [],
+        })
+        res, _ = self.ai_edit(model_json, instruction="convert to grams", draft=True)
+        self.assertEqual(res.status_code, 200, res.text)
+        changes = res.json()["changes"]
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["op"], "update")
+        self.assertEqual(changes[0]["target_id"], oil_id)
+        self.assertEqual(changes[0]["after"], {"amount": 14, "unit": "g"})
+
+    def test_derived_changes_never_remove_ingredients_missing_from_proposed(self):
+        oil_id, _ = self._recipe_with_ingredients()
+        model_json = json.dumps({
+            "reply": "Converted.",
+            "proposed": {"ingredients": [{"id": oil_id, "name": "Olive oil", "amount": 14, "unit": "g"}]},
+            "changes": [],
+            "suggestions": [],
+        })
+        res, _ = self.ai_edit(model_json, instruction="convert to grams", draft=True)
+        self.assertEqual([c["op"] for c in res.json()["changes"]], ["update"])
+
+    def test_listed_changes_win_over_proposed(self):
+        model_json = json.dumps({
+            "reply": "Renamed.",
+            "proposed": {"title": "From proposed"},
+            "changes": [{"op": "update", "field": "title", "target_id": None, "label": "Rename",
+                         "before": "Pizza dough", "after": "From changes", "why": ""}],
+            "suggestions": [],
+        })
+        res, _ = self.ai_edit(model_json, instruction="rename it", draft=True)
+        changes = res.json()["changes"]
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["after"], "From changes")
+
 
 if __name__ == "__main__":
     unittest.main()

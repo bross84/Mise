@@ -754,6 +754,61 @@ def _normalize_suggestions(
     return suggestions[:4], counter
 
 
+_INGREDIENT_DIFF_KEYS = ("name", "amount", "unit", "group_name", "ingredient_id")
+
+
+def _ingredient_label(ing: dict) -> str:
+    amount = ing.get("amount")
+    unit = str(ing.get("unit") or "").strip()
+    quantity = " ".join(str(p) for p in (amount, unit) if p not in (None, ""))
+    return f"{ing.get('name') or 'Ingredient'} — {quantity}" if quantity else str(ing.get("name") or "Ingredient")
+
+
+def _changes_from_proposed(recipe: Recipe, existing: dict, proposed_raw: dict) -> list[dict]:
+    """Rebuild raw change entries by diffing the model's `proposed` block against the recipe.
+
+    Models sometimes fill in `proposed` (the full updated fields) but leave `changes` empty, or list changes
+    that fail validation. The cook would see a reply claiming edits and no cards, so derive the cards here.
+    Ingredients missing from `proposed.ingredients` are not treated as removals: a model that returns a
+    partial array would otherwise delete the rest of the recipe.
+    """
+    derived: list[dict] = []
+
+    for field in ("title", "servings", "tags", "notes", "instructions", "cookbook"):
+        if field in proposed_raw and proposed_raw[field] != getattr(recipe, field, None):
+            derived.append({
+                "op": "update", "field": field, "target_id": None,
+                "label": f"Update {field}", "before": getattr(recipe, field, None),
+                "after": proposed_raw[field], "why": "",
+            })
+
+    proposed_ingredients = proposed_raw.get("ingredients")
+    if not isinstance(proposed_ingredients, list):
+        return derived
+
+    for ing in proposed_ingredients:
+        if not isinstance(ing, dict):
+            continue
+        ing_id = str(ing["id"]) if ing.get("id") is not None else None
+        current = existing.get(ing_id) if ing_id is not None else None
+        if current is None:
+            if str(ing.get("name") or "").strip():
+                derived.append({
+                    "op": "add", "field": "ingredients", "target_id": None,
+                    "label": f"Add {_ingredient_label(ing)}", "before": None, "after": ing, "why": "",
+                })
+            continue
+        after = {k: ing[k] for k in _INGREDIENT_DIFF_KEYS if k in ing and ing[k] != current.get(k)}
+        if after:
+            derived.append({
+                "op": "update", "field": "ingredients", "target_id": ing_id,
+                "label": f"{_ingredient_label(current)} → {_ingredient_label({**current, **after})}",
+                "before": {k: current.get(k) for k in after}, "after": after, "why": "",
+            })
+
+    return derived
+
+
 def _normalize_edit(recipe: Recipe, data: dict) -> AiEditResponse:
     """Sanitize raw model output: strip forbidden fields, re-key toggles, validate ingredient targets."""
     reply = str(data.get("reply") or "").strip()
@@ -764,6 +819,21 @@ def _normalize_edit(recipe: Recipe, data: dict) -> AiEditResponse:
     suggestions, _ = _normalize_suggestions(recipe, existing, data.get("suggestions"), counter)
 
     proposed_raw = data.get("proposed")
+
+    if not changes and not suggestions and isinstance(proposed_raw, dict):
+        derived, _ = _normalize_change_list(
+            recipe, existing, _changes_from_proposed(recipe, existing, proposed_raw), counter,
+        )
+        if derived:
+            logger.warning(
+                "AI edit returned no usable changes; derived %d from `proposed`. Raw changes: %.2000s",
+                len(derived), json.dumps(data.get("changes"), ensure_ascii=False, default=str),
+            )
+            changes = derived
+    if not changes and not suggestions and reply:
+        logger.warning("AI edit produced a reply but no usable changes. Raw output: %.4000s",
+                       json.dumps(data, ensure_ascii=False, default=str))
+
     proposed_clean = (
         {k: v for k, v in proposed_raw.items() if k in _AI_EDIT_ALLOWED_FIELDS}
         if isinstance(proposed_raw, dict)
