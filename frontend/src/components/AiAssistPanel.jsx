@@ -5,6 +5,21 @@ import { buildUpdatePayload, unmatchedChanges } from './aiChanges.js'
 import AiChangeCard from './AiChangeCard.jsx'
 import { MarkdownText } from './MarkdownText.jsx'
 
+const REQUEST_TIMEOUT_MS = 100_000
+
+// What the cook sees when a request fails. Always says whether anything changed.
+function failureMessage(err, timedOut) {
+  if (err?.name === 'AbortError') {
+    return timedOut
+      ? 'The assistant didn’t answer within 100 seconds, so I stopped waiting. Nothing was changed. Try again, or ask for less at once.'
+      : 'Stopped. Nothing was changed.'
+  }
+  if ([502, 503, 504].includes(err?.status)) {
+    return `The assistant service didn’t respond (error ${err.status}). Nothing was changed. This is usually the AI provider being slow or briefly down. Try the same message again.`
+  }
+  return err instanceof Error ? `${err.message} Nothing was changed.` : 'The assistant request failed. Nothing was changed.'
+}
+
 // Applying a change whose ingredient isn't in the recipe would silently do nothing while the
 // panel reported "Applied". Refuse instead so the cook knows.
 function assertChangesMatch(recipe, accepted) {
@@ -28,6 +43,10 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [sendingDraft, setSendingDraft] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const abortRef = useRef(null)
+  const timedOutRef = useRef(false)
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -52,8 +71,22 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
     setMessages((m) => [...m, { id: nextId(), role: 'user', content: instruction }])
     setInput('')
     setSending(true)
+    setSendingDraft(draft)
+    setElapsed(0)
+
+    // A request that never answers must not leave the cook staring at a spinner.
+    const controller = new AbortController()
+    abortRef.current = controller
+    timedOutRef.current = false
+    const startedAt = Date.now()
+    const ticker = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    const timeout = setTimeout(() => {
+      timedOutRef.current = true
+      controller.abort()
+    }, REQUEST_TIMEOUT_MS)
+
     try {
-      const res = await aiEditRecipe(recipeId, instruction, priorConversation, draft)
+      const res = await aiEditRecipe(recipeId, instruction, priorConversation, draft, controller.signal)
       const changes = res.changes ?? []
       const suggestions = res.suggestions ?? []
       setMessages((m) => [
@@ -74,11 +107,14 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
         {
           id: nextId(),
           role: 'assistant',
-          content: err instanceof Error ? err.message : 'The assistant request failed.',
+          content: failureMessage(err, timedOutRef.current),
           error: true,
         },
       ])
     } finally {
+      clearInterval(ticker)
+      clearTimeout(timeout)
+      abortRef.current = null
       setSending(false)
     }
   }
@@ -269,7 +305,21 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
             </div>
           ))}
 
-          {sending && <p className="text-xs text-mise-500">Thinking…</p>}
+          {sending && (
+            <div className="flex items-center gap-3 text-xs text-mise-500" role="status">
+              <span>
+                {sendingDraft ? 'Drafting changes' : 'Thinking'}… {elapsed}s
+                {elapsed >= 20 && ' — still working, long requests can take a minute or more'}
+              </span>
+              <button
+                type="button"
+                onClick={() => abortRef.current?.abort()}
+                className="rounded border border-mise-800 px-2 py-0.5 text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
 
         <form

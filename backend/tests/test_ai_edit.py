@@ -243,5 +243,65 @@ class AiEditModeTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+    def _mixed_unit_recipe(self):
+        res = self.client.patch(f"/api/recipes/{self.recipe_id}", json={
+            "ingredients": [
+                {"id": "a", "name": "Salt", "amount": 1.5, "unit": "Tsp"},
+                {"id": "b", "name": "Lime juice", "amount": 1, "unit": "ea"},
+                {"id": "c", "name": "Almond milk", "amount": 120, "unit": "ml"},
+                {"id": "d", "name": "Beef", "amount": 800, "unit": "g"},
+                {"id": "e", "name": "Parsley", "amount": 1.5, "unit": "tsp"},
+            ],
+        })
+        self.assertEqual(res.status_code, 200, res.text)
+
+    def test_typo_covert_still_uses_the_grams_path_and_rounds_when_asked(self):
+        self._mixed_unit_recipe()
+        model_json = json.dumps({"items": [
+            {"id": "a", "grams": 8.5}, {"id": "e", "grams": 0.9},
+        ]})
+        res, calls = self.ai_edit(
+            model_json, draft=True,
+            instruction="covert all non-metric ingredients to grams. Round them up to the nearest 1",
+        )
+        self.assertEqual(res.status_code, 200, res.text)
+        by_target = {c["target_id"]: c["after"] for c in res.json()["changes"]}
+        self.assertEqual(by_target["a"], {"amount": 9.0, "unit": "g"})
+        self.assertEqual(by_target["e"], {"amount": 1.0, "unit": "g"})
+        self.assertIn("rounded up", res.json()["reply"])
+        self.assertEqual(len(calls), 1)
+
+    def test_non_gram_request_also_converts_ml_and_count_units(self):
+        self._mixed_unit_recipe()
+        model_json = json.dumps({"items": [
+            {"id": "a", "grams": 8.5}, {"id": "b", "grams": 30}, {"id": "c", "grams": 124}, {"id": "e", "grams": 0.9},
+        ]})
+        res, calls = self.ai_edit(model_json, draft=True,
+                                  instruction="convert all non-gram ingredients to grams taking density into account")
+        sent = json.loads(calls[0]["messages"][1]["content"])
+        self.assertEqual({i["name"] for i in sent}, {"Salt", "Lime juice", "Almond milk", "Parsley"})
+        self.assertEqual({c["target_id"] for c in res.json()["changes"]}, {"a", "b", "c", "e"})
+        self.assertIn("Converted 4 of 4", res.json()["reply"])
+
+    def test_plain_non_metric_request_leaves_ml_and_counts_alone(self):
+        self._mixed_unit_recipe()
+        res, calls = self.ai_edit(json.dumps({"items": [{"id": "a", "grams": 8.5}, {"id": "e", "grams": 0.9}]}),
+                                  instruction="change all non-metric units to grams", draft=True)
+        sent = json.loads(calls[0]["messages"][1]["content"])
+        self.assertEqual({i["name"] for i in sent}, {"Salt", "Parsley"})
+
+
+    def test_intent_detection_survives_typos_and_ignores_near_misses(self):
+        from app.routers.recipes import _is_grams_conversion_request as conv, _is_rounding_request as rnd
+        for text in ("covert all non-gram ingredients to grams", "convrt everything to gramz",
+                     "chnge all to gramz please", "turn everything into grams"):
+            self.assertTrue(conv(text), text)
+        for text in ("round the oil to 5g", "add a pinch around the edge", "halve the salt", "rename it",
+                     "use 14 g of oil"):
+            self.assertFalse(conv(text), text)
+            self.assertFalse(rnd(text), text)
+        self.assertTrue(rnd("rond up all grams to the nearest 1"))
+
+
 if __name__ == "__main__":
     unittest.main()
