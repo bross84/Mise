@@ -276,28 +276,35 @@ async def search_ingredients(
             return SearchResponse(results=[])
 
     if external_source not in ("usda", "openfoodfacts"):
-        # Local DB first — candidate fetch via any-word ilike, then quality-filtered
-        from sqlalchemy import or_
+        # Local DB first — rank every ingredient against the query rather than hard-filtering.
         from rapidfuzz import fuzz as _fuzz
 
-        query_words = set(q.strip().lower().split())
-        search_terms = list(query_words)
-        filters = [Ingredient.name.ilike(f"%{term}%") for term in search_terms if term]
-        query_obj = db.query(Ingredient)
-        if filters:
-            query_obj = query_obj.filter(or_(*filters))
-        candidates = query_obj.order_by(Ingredient.name.asc()).limit(50).all()
+        query_words = re.findall(r"\w+", q.lower())
 
-        def _local_quality(name: str) -> bool:
+        def _local_score(name: str) -> float:
             nl = name.lower()
-            # Require ≥60% of query words to appear in the ingredient name
-            name_words = set(nl.split())
-            if query_words and len(query_words & name_words) / len(query_words) >= 0.6:
-                return True
-            # Fallback: fuzzy similarity ≥70
-            return _fuzz.WRatio(q.strip().lower(), nl) >= 70
+            name_words = re.findall(r"\w+", nl)
+            total = 0.0
+            for w in query_words:
+                if w in name_words:
+                    total += 1.0  # whole word ("rice" in "Rice, white")
+                elif any(nw.startswith(w) or w.startswith(nw) and len(nw) > 2 for nw in name_words):
+                    total += 0.8  # prefix / simple plural ("rices", "tomato" vs "tomatoes")
+                elif w in nl:
+                    total += 0.5  # substring
+            coverage = total / len(query_words) if query_words else 0.0
+            if nl == q.strip().lower():
+                coverage += 1.0
+            if coverage < 0.5:
+                # Typo tolerance only: strong fuzzy match against the full name
+                fz = _fuzz.WRatio(q.strip().lower(), nl)
+                return fz / 200 if fz >= 85 else 0.0
+            return coverage
 
-        local_rows = [r for r in candidates if _local_quality(r.name)][:15]
+        scored = [(r, _local_score(r.name)) for r in db.query(Ingredient).all()]
+        scored = [(r, sc) for r, sc in scored if sc > 0]
+        scored.sort(key=lambda t: (-t[1], len(t[0].name), t[0].name))
+        local_rows = [r for r, _ in scored][:15]
 
         if local_rows:
             return SearchResponse(results=_filter_blocked([
