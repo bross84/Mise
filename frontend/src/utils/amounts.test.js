@@ -12,10 +12,10 @@ describe('parseDecimal', () => {
     assert.equal(parseDecimal('2.'), 2)
   })
 
-  it('rounds to two decimals so the box and the scale agree', () => {
-    assert.equal(parseDecimal('.375'), 0.38)
-    assert.equal(parseDecimal('1.234'), 1.23)
-    assert.equal(parseDecimal('0.999'), 1)
+  it('never rounds what was typed', () => {
+    assert.equal(parseDecimal('.375'), 0.375)
+    assert.equal(parseDecimal('1.234'), 1.234)
+    assert.equal(parseDecimal('0.999'), 0.999)
   })
 
   it('ignores surrounding whitespace', () => {
@@ -28,11 +28,11 @@ describe('parseDecimal', () => {
     }
   })
 
-  it('rejects zero, negatives, and values that round to zero', () => {
-    for (const text of ['0', '0.0', '-1', '-0.5', '0.004']) {
+  it('rejects zero and negatives', () => {
+    for (const text of ['0', '0.0', '-1', '-0.5']) {
       assert.equal(parseDecimal(text), null, JSON.stringify(text))
     }
-    assert.equal(parseDecimal('0.005'), 0.01)
+    assert.equal(parseDecimal('0.004'), 0.004)
   })
 
   it('handles missing input and numbers', () => {
@@ -44,11 +44,12 @@ describe('parseDecimal', () => {
 })
 
 describe('formatDecimal', () => {
-  it('drops trailing zeros and keeps up to two decimals', () => {
+  it('drops trailing zeros and keeps every real decimal', () => {
     assert.equal(formatDecimal(2), '2')
     assert.equal(formatDecimal(0.5), '0.5')
     assert.equal(formatDecimal(1.25), '1.25')
-    assert.equal(formatDecimal(0.375), '0.38')
-    assert.equal(formatDecimal(2.5000000001), '2.5')
+    assert.equal(formatDecimal(0.375), '0.375')
+    assert.equal(formatDecimal(2.5000000000001), '2.5')
+    assert.equal(formatDecimal(0.1 * 3), '0.3')
   })
 })

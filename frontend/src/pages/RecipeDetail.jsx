@@ -23,12 +23,7 @@ import {
 } from '../api/client.js'
 
 function formatScaledAmount(amount) {
-  if (Number.isInteger(amount)) {
-    return amount
-  }
-
-  const rounded = Number(amount.toFixed(2))
-  return Number.isInteger(rounded) ? rounded : rounded
+  return Number(Number(amount).toPrecision(12))
 }
 
 function formatTimerLabel(timerSeconds) {
@@ -551,7 +546,7 @@ function RecipeDetail() {
   const stepBox = (delta) => {
     setBoxDraft(null)
     setBoxValue((current) => {
-      const next = Math.round((current + delta) * 100) / 100
+      const next = Number((current + delta).toPrecision(12))
       return next > 0 ? next : current
     })
   }
@@ -572,8 +567,8 @@ function RecipeDetail() {
 
   const recipeServings = recipe?.servings > 0 ? recipe.servings : 1
 
-  // Scale Recipe mode multiplies every amount (rounded: counts to whole numbers, weights and volumes
-  // to two decimals). Per Serving mode leaves the amounts alone.
+  // Scale Recipe mode multiplies every amount exactly (no rounding). Per Serving mode leaves the
+  // amounts alone.
   const scaledAmounts = useMemo(
     () => scaleIngredients(recipe?.ingredients ?? [], inScaleMode ? scale : 1),
     [recipe, inScaleMode, scale],
@@ -740,6 +735,18 @@ function RecipeDetail() {
 
   const unlinkedCount = draft ? draft.ingredients.filter(isUnlinked).length : 0
 
+  // Contiguous runs of the draft list: { name (null = ungrouped), start, items }.
+  const draftSections = useMemo(() => {
+    const sections = []
+    ;(draft?.ingredients ?? []).forEach((ing, index) => {
+      const name = ing.group_name ?? null
+      const last = sections[sections.length - 1]
+      if (last && last.name === name) last.items.push(ing)
+      else sections.push({ name, start: index, items: [ing] })
+    })
+    return sections
+  }, [draft])
+
   // Moves an ingredient one row up/down (direction -1 or 1). Swapping past a row from a
   // different section adopts that section's group_name — otherwise crossing a boundary
   // would strand the moved row in a second, disconnected run of its old section (the same
@@ -752,8 +759,8 @@ function RecipeDetail() {
 
       const moved = rows[index]
       const other = rows[targetIndex]
-      const movedGroup = (moved.group_name || '') || null
-      const otherGroup = (other.group_name || '') || null
+      const movedGroup = moved.group_name ?? null
+      const otherGroup = other.group_name ?? null
 
       rows[index] = other
       rows[targetIndex] = movedGroup === otherGroup ? moved : { ...moved, group_name: otherGroup }
@@ -762,19 +769,38 @@ function RecipeDetail() {
     })
   }
 
-  // Rename a section: applies to the row at startIndex and every contiguous row below it
-  // that shares the same original group_name. Keeps the raw string while typing (spaces
-  // and all); handleSaveEdit and groupIngredients normalize blank -> null.
+  // Rename a section: applies to the row at startIndex and every contiguous row below it that
+  // shares the same group_name. A cleared name stays '' (still a section, so the header doesn't
+  // vanish mid-edit); handleSaveEdit and groupIngredients normalize blank -> null.
   const renameDraftSection = (startIndex, value) => {
-    const nextGroup = value === '' ? null : value
     setDraft((current) => {
       const rows = [...current.ingredients]
-      const original = (rows[startIndex]?.group_name || '') || null
+      const original = rows[startIndex]?.group_name ?? null
       for (let i = startIndex; i < rows.length; i += 1) {
-        const rowGroup = (rows[i].group_name || '') || null
-        if (i > startIndex && rowGroup !== original) break
-        rows[i] = { ...rows[i], group_name: nextGroup }
+        if (i > startIndex && (rows[i].group_name ?? null) !== original) break
+        rows[i] = { ...rows[i], group_name: value }
       }
+      return { ...current, ingredients: rows }
+    })
+  }
+
+  // Dissolves a section: its rows stay put but become ungrouped.
+  const ungroupDraftSection = (startIndex) => {
+    setDraft((current) => {
+      const rows = [...current.ingredients]
+      const original = rows[startIndex]?.group_name ?? null
+      for (let i = startIndex; i < rows.length && (rows[i].group_name ?? null) === original; i += 1) {
+        rows[i] = { ...rows[i], group_name: null }
+      }
+      return { ...current, ingredients: rows }
+    })
+  }
+
+  // Inserts a blank row right after `index` in the given section (null = ungrouped).
+  const insertDraftIngredient = (index, groupName) => {
+    setDraft((current) => {
+      const rows = [...current.ingredients]
+      rows.splice(index + 1, 0, makeDraftIngredient({ group_name: groupName }))
       return { ...current, ingredients: rows }
     })
   }
@@ -1298,160 +1324,167 @@ function RecipeDetail() {
         <div className="mt-6 space-y-6">
           {/* Ingredients editor */}
           <section className="rounded border border-theme bg-mise-900 p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-baseline gap-3">
-                <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
-                {unlinkedCount > 0 && (
-                  <span className="text-[11px] text-mise-400">
-                    {unlinkedCount} of {draft.ingredients.filter((i) => i.name.trim()).length} not linked
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    ingredients: [
-                      ...current.ingredients,
-                      makeDraftIngredient({ group_name: current.ingredients.at(-1)?.group_name ?? null }),
-                    ],
-                  }))
-                }
-                className="rounded border border-mise-800 px-3 py-1.5 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                Add row
-              </button>
+            <div className="mb-4 flex items-baseline gap-3">
+              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredients</h2>
+              {unlinkedCount > 0 && (
+                <span className="text-[11px] text-mise-400">
+                  {unlinkedCount} of {draft.ingredients.filter((i) => i.name.trim()).length} not linked
+                </span>
+              )}
             </div>
-            <div className="space-y-2">
-              {draft.ingredients.map((ing, index) => {
-                const prev = draft.ingredients[index - 1]
-                const startsSection =
-                  index === 0 || ((prev?.group_name || '') || null) !== ((ing.group_name || '') || null)
-                return (
-                <div key={ing.id} className={`group/ing ${startsSection && index > 0 ? 'pt-3' : ''}`}>
-                {startsSection ? (
-                  <input
-                    type="text"
-                    aria-label={`Section for ingredient ${index + 1}`}
-                    value={ing.group_name || ''}
-                    onChange={(e) => renameDraftSection(index, e.target.value)}
-                    placeholder="Section (optional) — e.g. Marinade"
-                    className={`${inputCls} mb-2 border-dashed text-mise-400`}
-                  />
-                ) : (
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => renameDraftSection(index, 'New section')}
-                      className="mb-1 text-[10px] uppercase tracking-wider text-mise-600 opacity-0 transition hover:text-mise-400 focus:opacity-100 group-hover/ing:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                    >
-                      + section here
-                    </button>
-                  </div>
-                )}
-                <div className={`grid grid-cols-12 items-start gap-2 rounded border border-theme bg-mise-950/50 p-3 ${isUnlinked(ing) ? 'border-l-2 !border-l-ember' : ''}`}>
-                  <label htmlFor={`edit-ing-name-${ing.id}`} className="sr-only">Ingredient {index + 1} name</label>
-                  <div className="col-span-4">
-                    <input
-                      id={`edit-ing-name-${ing.id}`}
-                      type="text"
-                      value={ing.name}
-                      onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
-                      onFocus={() => setOpenIngredientSearchId(ing.id)}
-                      placeholder="Name"
-                      className={`${inputCls} w-full`}
-                    />
-                    {isUnlinked(ing) ? (
-                      <p className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-mise-400">
-                        Not linked
-                        <button
-                          type="button"
-                          onClick={() => setOpenIngredientSearchId(ing.id)}
-                          aria-label={`Find database match for ingredient ${index + 1}`}
-                          className="text-mise-300 underline underline-offset-2 transition hover:text-mise-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                        >
-                          Find match
-                        </button>
-                      </p>
-                    ) : null}
-                  </div>
-                  <label htmlFor={`edit-ing-amount-${ing.id}`} className="sr-only">Amount</label>
-                  <input
-                    id={`edit-ing-amount-${ing.id}`}
-                    type="text"
-                    value={ing.amount}
-                    onChange={(e) => updateDraftIngredient(ing.id, 'amount', e.target.value)}
-                    placeholder="Amount"
-                    className={`${inputCls} col-span-3`}
-                  />
-                  <label htmlFor={`edit-ing-unit-${ing.id}`} className="sr-only">Unit</label>
-                  <input
-                    id={`edit-ing-unit-${ing.id}`}
-                    type="text"
-                    value={ing.unit}
-                    onChange={(e) => updateDraftIngredient(ing.id, 'unit', e.target.value)}
-                    placeholder="Unit"
-                    className={`${inputCls} col-span-3`}
-                  />
-                  <div className="col-span-2 flex h-[38px] items-center justify-end gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => moveDraftIngredient(index, -1)}
-                      disabled={index === 0}
-                      aria-label={`Move ingredient ${index + 1} up`}
-                      className="flex items-center justify-center p-1 text-mise-500 transition hover:text-mise-300 disabled:opacity-30 disabled:hover:text-mise-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                    >
-                      <ChevronUp size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveDraftIngredient(index, 1)}
-                      disabled={index === draft.ingredients.length - 1}
-                      aria-label={`Move ingredient ${index + 1} down`}
-                      className="flex items-center justify-center p-1 text-mise-500 transition hover:text-mise-300 disabled:opacity-30 disabled:hover:text-mise-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                    >
-                      <ChevronDown size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          ingredients:
-                            current.ingredients.length === 1
-                              ? current.ingredients
-                              : current.ingredients.filter((i) => i.id !== ing.id),
-                        }))
-                      }
-                      aria-label={`Remove ingredient ${index + 1}`}
-                      className="flex items-center justify-center p-1 text-rose-400 transition hover:text-rose-300 focus-visible:outline-none"
-                    >
-                      <X size={15} />
-                    </button>
-                  </div>
-                  {openIngredientSearchId === ing.id && (
-                    <div className="col-span-12 mt-2">
-                      <IngredientSearchPanel
-                        ingredientName={ing.name}
-                        onClose={() => setOpenIngredientSearchId(null)}
-                        onSelect={(savedIngredient) => {
-                          setDraft((current) => ({
-                            ...current,
-                            ingredients: current.ingredients.map((item) => (
-                              item.id === ing.id
-                                ? { ...item, name: savedIngredient.name, ingredient_id: savedIngredient.id }
-                                : item
-                            )),
-                          }))
-                        }}
+            <div className="space-y-5">
+              {draftSections.map((section) => (
+                <div key={section.items[0].id}>
+                  {section.name !== null && (
+                    <div className="mb-2 flex items-center gap-2">
+                      <input
+                        type="text"
+                        aria-label="Section name"
+                        value={section.name}
+                        onChange={(e) => renameDraftSection(section.start, e.target.value)}
+                        placeholder="Section name, e.g. Marinade"
+                        className={`${inputCls} flex-1 text-xs font-medium uppercase tracking-wider`}
                       />
+                      <button
+                        type="button"
+                        onClick={() => ungroupDraftSection(section.start)}
+                        className="shrink-0 text-[11px] text-mise-500 transition hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      >
+                        Ungroup
+                      </button>
                     </div>
                   )}
+                  <div className={section.name !== null ? 'ml-3 space-y-2 border-l-2 border-mise-700 pl-3' : 'space-y-2'}>
+                    {section.items.map((ing, offset) => {
+                      const index = section.start + offset
+                      return (
+                        <div key={ing.id} className={`rounded border border-theme bg-mise-950/50 p-2 ${isUnlinked(ing) ? 'border-l-2 !border-l-ember' : ''}`}>
+                          <div className="flex items-center gap-2">
+                            <label htmlFor={`edit-ing-amount-${ing.id}`} className="sr-only">Amount</label>
+                            <input
+                              id={`edit-ing-amount-${ing.id}`}
+                              type="text"
+                              inputMode="decimal"
+                              value={ing.amount}
+                              onChange={(e) => updateDraftIngredient(ing.id, 'amount', e.target.value)}
+                              placeholder="Amt"
+                              className={`${inputCls} w-20 shrink-0`}
+                            />
+                            <label htmlFor={`edit-ing-unit-${ing.id}`} className="sr-only">Unit</label>
+                            <input
+                              id={`edit-ing-unit-${ing.id}`}
+                              type="text"
+                              value={ing.unit}
+                              onChange={(e) => updateDraftIngredient(ing.id, 'unit', e.target.value)}
+                              placeholder="Unit"
+                              className={`${inputCls} w-24 shrink-0`}
+                            />
+                            <label htmlFor={`edit-ing-name-${ing.id}`} className="sr-only">Ingredient {index + 1} name</label>
+                            <input
+                              id={`edit-ing-name-${ing.id}`}
+                              type="text"
+                              value={ing.name}
+                              onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
+                              placeholder="Ingredient"
+                              className={`${inputCls} min-w-0 flex-1`}
+                            />
+                            {ing.name.trim() && (
+                              <button
+                                type="button"
+                                onClick={() => setOpenIngredientSearchId(openIngredientSearchId === ing.id ? null : ing.id)}
+                                aria-label={isUnlinked(ing) ? `Find database match for ingredient ${index + 1}` : `Change database match for ingredient ${index + 1}`}
+                                title={isUnlinked(ing) ? 'Not linked: find a database match' : 'Linked: change match'}
+                                className="flex shrink-0 items-center p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                              >
+                                <span className={`h-2 w-2 rounded-full ${isUnlinked(ing) ? 'bg-ember' : 'bg-mise-500'}`} />
+                              </button>
+                            )}
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => moveDraftIngredient(index, -1)}
+                                disabled={index === 0}
+                                aria-label={`Move ingredient ${index + 1} up`}
+                                className="flex items-center justify-center p-1 text-mise-500 transition hover:text-mise-300 disabled:opacity-30 disabled:hover:text-mise-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                              >
+                                <ChevronUp size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveDraftIngredient(index, 1)}
+                                disabled={index === draft.ingredients.length - 1}
+                                aria-label={`Move ingredient ${index + 1} down`}
+                                className="flex items-center justify-center p-1 text-mise-500 transition hover:text-mise-300 disabled:opacity-30 disabled:hover:text-mise-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                              >
+                                <ChevronDown size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDraft((current) => ({
+                                    ...current,
+                                    ingredients:
+                                      current.ingredients.length === 1
+                                        ? current.ingredients
+                                        : current.ingredients.filter((i) => i.id !== ing.id),
+                                  }))
+                                }
+                                aria-label={`Remove ingredient ${index + 1}`}
+                                className="flex items-center justify-center p-1 text-rose-400 transition hover:text-rose-300 focus-visible:outline-none"
+                              >
+                                <X size={15} />
+                              </button>
+                            </div>
+                          </div>
+                          {openIngredientSearchId === ing.id && (
+                            <div className="mt-2">
+                              <IngredientSearchPanel
+                                ingredientName={ing.name}
+                                onClose={() => setOpenIngredientSearchId(null)}
+                                onSelect={(savedIngredient) => {
+                                  setDraft((current) => ({
+                                    ...current,
+                                    ingredients: current.ingredients.map((item) => (
+                                      item.id === ing.id
+                                        ? { ...item, name: savedIngredient.name, ingredient_id: savedIngredient.id }
+                                        : item
+                                    )),
+                                  }))
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {section.name !== null && (
+                      <button
+                        type="button"
+                        onClick={() => insertDraftIngredient(section.start + section.items.length - 1, section.name)}
+                        className="text-[11px] text-mise-400 transition hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      >
+                        + Add to {section.name.trim() || 'section'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                </div>
-                )
-              })}
+              ))}
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => insertDraftIngredient(draft.ingredients.length - 1, null)}
+                className="rounded border border-mise-800 px-3 py-1.5 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                Add ingredient
+              </button>
+              <button
+                type="button"
+                onClick={() => insertDraftIngredient(draft.ingredients.length - 1, '')}
+                className="rounded border border-mise-800 px-3 py-1.5 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                Add section
+              </button>
             </div>
           </section>
 

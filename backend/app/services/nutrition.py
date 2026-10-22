@@ -215,9 +215,14 @@ def grams_for_amount(
         return (amount * serving_g, None) if serving_g else (None, NEEDS_SERVING_WEIGHT)
     if stripped and stripped not in COUNT_UNITS:
         factor = UNIT_TO_GRAMS.get(stripped)
-        if factor is None:
-            return None, f'Unknown unit "{unit.strip()}"'
-        return amount * factor, None
+        if factor is not None:
+            return amount * factor, None
+        # Not a measure: importers often leave the noun in the unit ("8 tortillas"), so
+        # weigh it as a count of the ingredient's pieces before giving up.
+        weight = piece_g or count_weight_lookup(ingredient_name)
+        if weight:
+            return amount * weight, None
+        return None, f'Unknown unit "{unit.strip()}"'
     # No unit or a count unit: the ingredient's own piece weight, then the produce table.
     if piece_g:
         return amount * piece_g, None

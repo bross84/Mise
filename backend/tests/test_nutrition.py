@@ -271,6 +271,13 @@ class RecipeMacroTests(unittest.TestCase):
         self.assertFalse(item.matched)
         self.assertIn("pinch", item.note)
 
+    def test_noun_in_the_unit_is_weighed_as_a_count(self):
+        # importers leave "8 tortillas" as amount 8, unit "tortillas"
+        tortilla = self.add("tortilla", 300, serving_grams=71, serving_quantity=1)
+        macros, item = self.breakdown(tortilla, 8, "tortillas")
+        self.assertTrue(item.matched)
+        self.assertAlmostEqual(macros.total.calories, 8 * 71 * 3.0, places=1)
+
 
 if __name__ == "__main__":
     unittest.main()
