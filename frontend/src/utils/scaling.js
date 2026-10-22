@@ -1,9 +1,7 @@
-// Scaling a recipe: every ingredient amount is multiplied by one factor.
-//
-// Amounts measured by weight or volume keep two decimals. Everything else (eggs, cloves, "large",
-// no unit at all) is a count of things, so it rounds to a whole number. Nothing that was in the
-// recipe ever drops out: a count never rounds below 1 and a measured amount never below 0.01. An
-// amount that was 0 (e.g. "salt, to taste") stays 0.
+// Scaling a recipe: every ingredient amount is multiplied by one factor. Nothing is rounded:
+// 3 eggs at x0.75 is 2.25 eggs. The only cleanup is trimming binary floating-point noise
+// (0.1 * 3 giving 0.30000000000000004), which is not a rounding of the real value.
+// An amount that was 0 (e.g. "salt, to taste") stays 0.
 
 const MEASURED_UNITS = new Set([
   // weight
@@ -19,7 +17,8 @@ const MEASURED_UNITS = new Set([
 
 const MACRO_KEYS = ['calories', 'protein', 'carbs', 'fat']
 
-const round2 = (n) => Math.round(n * 100) / 100
+/** Strips floating-point noise (12 significant digits is far beyond any recipe amount). */
+export const cleanFloat = (n) => Number(n.toPrecision(12))
 
 /** True when the unit is a weight or volume ("g", "cups", "fl. oz"); false for counts and blanks. */
 export function isMeasuredUnit(unit) {
@@ -27,19 +26,17 @@ export function isMeasuredUnit(unit) {
   return MEASURED_UNITS.has(normalized)
 }
 
-/** One ingredient amount multiplied by `factor`, rounded by the rules above. */
+/** One ingredient amount multiplied by `factor`, exactly. */
 export function scaleAmount(amount, unit, factor) {
   const original = Number(amount)
   if (!Number.isFinite(original)) return 0
   if (original <= 0) return original
-  const raw = original * factor
-  return isMeasuredUnit(unit) ? Math.max(0.01, round2(raw)) : Math.max(1, Math.round(raw))
+  return cleanFloat(original * factor)
 }
 
 /**
  * The scaled version of every ingredient: { id, amount, newAmount, ratio }. `ratio` is
- * newAmount / amount, which is how much that ingredient's macros change once rounding is applied.
- * A factor of exactly 1 changes nothing (it must not round a stored 1.5 eggs).
+ * newAmount / amount, which is how much that ingredient's macros change.
  */
 export function scaleIngredients(ingredients, factor) {
   return ingredients.map((ingredient) => {
@@ -57,7 +54,7 @@ export function scalingChangesAmounts(scaled) {
 /**
  * The recipe's macro totals after scaling, from the API's `macros` (total plus per-ingredient
  * breakdown). Each matched ingredient's macros move by its own ratio, so the result matches what the
- * server calculates once the rounded amounts are saved. Returns null without macros.
+ * server calculates once the amounts are saved. Returns null without macros.
  */
 export function scaleMacroTotals(macros, scaled) {
   if (!macros?.total) return null
