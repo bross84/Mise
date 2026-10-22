@@ -1387,6 +1387,7 @@ function RecipeDetail() {
                               type="text"
                               value={ing.name}
                               onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
+                              onFocus={() => setOpenIngredientSearchId(ing.id)}
                               placeholder="Ingredient"
                               className={`${inputRowCls} min-w-0 flex-1`}
                             />
