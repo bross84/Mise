@@ -63,6 +63,8 @@ function StarRating({ value, onChange, className = 'mt-4' }) {
 
 const inputCls =
   'w-full rounded border border-mise-800 bg-mise-950 px-3 py-2 text-sm text-mise-300 placeholder:text-mise-500 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+// For flex rows where the field sets its own width (w-full would override it).
+const inputRowCls = inputCls.replace('w-full ', '')
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
 
@@ -1343,7 +1345,7 @@ function RecipeDetail() {
                         value={section.name}
                         onChange={(e) => renameDraftSection(section.start, e.target.value)}
                         placeholder="Section name, e.g. Marinade"
-                        className={`${inputCls} flex-1 text-xs font-medium uppercase tracking-wider`}
+                        className={`${inputRowCls} min-w-0 flex-1 text-xs font-medium uppercase tracking-wider`}
                       />
                       <button
                         type="button"
@@ -1368,7 +1370,7 @@ function RecipeDetail() {
                               value={ing.amount}
                               onChange={(e) => updateDraftIngredient(ing.id, 'amount', e.target.value)}
                               placeholder="Amt"
-                              className={`${inputCls} w-20 shrink-0`}
+                              className={`${inputRowCls} w-20 shrink-0`}
                             />
                             <label htmlFor={`edit-ing-unit-${ing.id}`} className="sr-only">Unit</label>
                             <input
@@ -1377,7 +1379,7 @@ function RecipeDetail() {
                               value={ing.unit}
                               onChange={(e) => updateDraftIngredient(ing.id, 'unit', e.target.value)}
                               placeholder="Unit"
-                              className={`${inputCls} w-24 shrink-0`}
+                              className={`${inputRowCls} w-24 shrink-0`}
                             />
                             <label htmlFor={`edit-ing-name-${ing.id}`} className="sr-only">Ingredient {index + 1} name</label>
                             <input
@@ -1386,7 +1388,7 @@ function RecipeDetail() {
                               value={ing.name}
                               onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
                               placeholder="Ingredient"
-                              className={`${inputCls} min-w-0 flex-1`}
+                              className={`${inputRowCls} min-w-0 flex-1`}
                             />
                             {ing.name.trim() && (
                               <button
