@@ -65,7 +65,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
 
     const priorConversation = messages
       .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.error)
-      .slice(-8)
+      .slice(-24)
       .map((m) => ({ role: m.role, content: m.content }))
 
     setMessages((m) => [...m, { id: nextId(), role: 'user', content: instruction }])
