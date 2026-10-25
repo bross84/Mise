@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { CalendarCheck, CalendarPlus, ChefHat, ChevronDown, ChevronUp, Copy, Download, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, ChefHat, ChevronDown, ChevronUp, Copy, Download, GripVertical, Pencil, Share2, Sparkles, Star, Trash2, X } from 'lucide-react'
 import { MarkdownField, MarkdownText } from '../components/MarkdownText.jsx'
 import AiAssistPanel from '../components/AiAssistPanel.jsx'
 import IngredientSearchPanel from '../components/IngredientSearchPanel.jsx'
@@ -735,6 +735,9 @@ function RecipeDetail() {
     }))
   }
 
+  const [dragIngredientId, setDragIngredientId] = useState(null)
+  const [dropTarget, setDropTarget] = useState(null) // { id, position: 'before' | 'after' }
+
   const unlinkedCount = draft ? draft.ingredients.filter(isUnlinked).length : 0
 
   // Contiguous runs of the draft list: { name (null = ungrouped), start, items }.
@@ -769,6 +772,28 @@ function RecipeDetail() {
 
       return { ...current, ingredients: rows }
     })
+  }
+
+  // Drag-and-drop reorder. Dropping before/after a row puts the dragged row there and, like the
+  // arrow buttons, adopts that row's section.
+  const dropDraftIngredient = (dragId, targetId, position) => {
+    if (!dragId || dragId === targetId) return
+    setDraft((current) => {
+      const rows = [...current.ingredients]
+      const from = rows.findIndex((r) => r.id === dragId)
+      if (from === -1) return current
+      const [moved] = rows.splice(from, 1)
+      const to = rows.findIndex((r) => r.id === targetId)
+      if (to === -1) return current
+      const target = rows[to]
+      rows.splice(position === 'after' ? to + 1 : to, 0, { ...moved, group_name: target.group_name ?? null })
+      return { ...current, ingredients: rows }
+    })
+  }
+
+  const endIngredientDrag = () => {
+    setDragIngredientId(null)
+    setDropTarget(null)
   }
 
   // Rename a section: applies to the row at startIndex and every contiguous row below it that
@@ -1338,7 +1363,19 @@ function RecipeDetail() {
               {draftSections.map((section) => (
                 <div key={section.items[0].id}>
                   {section.name !== null && (
-                    <div className="mb-2 flex items-center gap-2">
+                    <div
+                      className={`mb-2 flex items-center gap-2 rounded ${dropTarget?.id === section.items[0].id && dropTarget.position === 'before' ? 'ring-2 ring-ember' : ''}`}
+                      onDragOver={(e) => {
+                        if (!dragIngredientId) return
+                        e.preventDefault()
+                        setDropTarget({ id: section.items[0].id, position: 'before' })
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        dropDraftIngredient(dragIngredientId, section.items[0].id, 'before')
+                        endIngredientDrag()
+                      }}
+                    >
                       <input
                         type="text"
                         aria-label="Section name"
@@ -1360,8 +1397,39 @@ function RecipeDetail() {
                     {section.items.map((ing, offset) => {
                       const index = section.start + offset
                       return (
-                        <div key={ing.id} className={`rounded border border-theme bg-mise-950/50 p-2 ${isUnlinked(ing) ? 'border-l-2 !border-l-ember' : ''}`}>
+                        <div
+                          key={ing.id}
+                          onDragOver={(e) => {
+                            if (!dragIngredientId) return
+                            e.preventDefault()
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            const position = e.clientY > rect.top + rect.height / 2 ? 'after' : 'before'
+                            if (dropTarget?.id !== ing.id || dropTarget.position !== position) setDropTarget({ id: ing.id, position })
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            dropDraftIngredient(dragIngredientId, ing.id, dropTarget?.id === ing.id ? dropTarget.position : 'before')
+                            endIngredientDrag()
+                          }}
+                          className={`rounded border border-theme bg-mise-950/50 p-2 ${isUnlinked(ing) ? 'border-l-2 !border-l-ember' : ''} ${dragIngredientId === ing.id ? 'opacity-40' : ''} ${dropTarget?.id === ing.id && dragIngredientId !== ing.id ? (dropTarget.position === 'before' ? '!border-t-2 !border-t-ember' : '!border-b-2 !border-b-ember') : ''}`}
+                        >
                           <div className="flex items-center gap-2">
+                            <span
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.effectAllowed = 'move'
+                                e.dataTransfer.setData('text/plain', ing.id)
+                                const row = e.currentTarget.closest('[class*="rounded border"]')
+                                if (row) e.dataTransfer.setDragImage(row, 16, 16)
+                                setDragIngredientId(ing.id)
+                              }}
+                              onDragEnd={endIngredientDrag}
+                              title="Drag to reorder or move between sections"
+                              aria-hidden="true"
+                              className="flex shrink-0 cursor-grab touch-none items-center p-1 text-mise-500 hover:text-mise-300 active:cursor-grabbing"
+                            >
+                              <GripVertical size={15} />
+                            </span>
                             <label htmlFor={`edit-ing-amount-${ing.id}`} className="sr-only">Amount</label>
                             <input
                               id={`edit-ing-amount-${ing.id}`}
