@@ -508,19 +508,21 @@ current recipe as JSON (it may include a "macros" block: computed nutrition per 
 ingredient — use those numbers for calories/protein/carbs/fat, and treat any ingredient with "matched": false as \
 unknown rather than guessing its nutrition) and then the conversation.
 
-This is a conversation, not an editing session. You cannot change the recipe here, and you must not propose, \
-suggest, or offer to change it. Answer what the cook actually said or asked, directly, the way a knowledgeable \
-colleague would:
-- If they tell you what they did or what happened ("I only used 15 ml of water", "it came out dry"), that is \
-information, not a request. Acknowledge it and answer any question inside it. Do not turn it into a fix.
-- If they ask a question, answer that question. Look at the recipe JSON before saying what is or isn't in it.
-- Give ideas, fixes, swaps, or "you could try..." only when the cook asks for them ("what can we do about \
-this?", "what would you change?"), and then as options to weigh, never as a decision. Otherwise do not volunteer \
-any.
-- Do not end with an offer or a prompt ("want me to...?", "let me know if you'd like..."). Stop when you have \
-answered.
-- Never write "Change X from A to B", say you have updated the recipe, or say you will. Nothing is edited from \
-this conversation.
+This is a conversation, not an editing session. You cannot change the recipe here. Talk it through the way a \
+knowledgeable colleague would: engage with what the cook is trying to figure out, not just the literal words.
+- Never just repeat or confirm what the cook said ("Got it", "Understood, X is your concern"). Every reply must \
+add something: an answer, a cause, a consideration, or a question.
+- When the cook asks a question, answer it, and say why in cooking terms (acidity, protein, fat, hydration, \
+salt, etc.). Check the recipe JSON before saying what is or isn't in it. A bare "yes, that works" is not enough: \
+mention what the thing changes or doesn't. Read each message in light of the whole conversation and what the \
+cook is working toward.
+- When the cook states a problem or goal ("the tang is my biggest complaint", "it came out dry"), engage with \
+it: explain the likely causes in this recipe, using its actual ingredients and numbers, lay out the options \
+worth weighing with their trade-offs, and where it helps ask one pointed question back. If they only report what \
+they did, with no problem or question in it, respond briefly to what it implies.
+- Options are for the cook to weigh, never a decision. Do not write "Change X from A to B", do not say you \
+have updated the recipe or will, and do not offer to make or draft changes ("want me to...?"). Nothing is \
+edited from this conversation.
 - If one detail you don't have would change your answer, say so or ask one short question.
 - If the recipe (title, tags, notes, or the cook's own words) signals a constraint — "high protein", "keto", \
 "gluten-free", "vegan" — any idea you give must not silently abandon it.
@@ -692,8 +694,9 @@ def _recipe_for_ai(recipe: Recipe, macros: "MacrosResponse | None" = None) -> di
 # Appended to the cook's message (never stored or shown): the model follows a reminder on the turn it is
 # answering far more reliably than a rule in the system prompt.
 _CHAT_REMINDER = (
-    "\n\n[Reply only to what I said above. Do not suggest, recommend, or hint at any fix, change, swap, or "
-    "next step unless my message explicitly asks what to do or what you'd change. Do not end with an offer.]"
+    "\n\n[Don't just echo what I said; add something useful. Engage with the problem or goal behind it: causes, "
+    "options to weigh, or a question back. Never write a concrete edit like \"change X to Y\" and never offer to "
+    "make or draft a change.]"
 )
 
 
@@ -702,7 +705,7 @@ def _build_chat_messages(recipe_json: dict, conversation: list, message: str) ->
         {"role": "system", "content": AI_CHAT_SYSTEM_PROMPT},
         {"role": "user", "content": f"Current recipe (JSON):\n{json.dumps(recipe_json, ensure_ascii=False)}"},
     ]
-    for turn in (conversation or [])[-8:]:
+    for turn in (conversation or [])[-24:]:
         messages.append({"role": turn.role, "content": turn.content})
     messages.append({"role": "user", "content": f"{message}{_CHAT_REMINDER}"})
     return messages
@@ -713,7 +716,7 @@ def _build_edit_messages(recipe_json: dict, conversation: list, instruction: str
         {"role": "system", "content": AI_EDIT_SYSTEM_PROMPT},
         {"role": "user", "content": f"Current recipe (JSON):\n{json.dumps(recipe_json, ensure_ascii=False)}"},
     ]
-    for turn in (conversation or [])[-8:]:
+    for turn in (conversation or [])[-24:]:
         messages.append({"role": turn.role, "content": turn.content})
     count = len(recipe_json.get("ingredients") or [])
     messages.append({
@@ -1148,7 +1151,8 @@ async def ai_edit_recipe(recipe_id: int, payload: AiEditRequest, db: Session = D
     if _is_rounding_request(instruction):
         return _draft_rounding(recipe, instruction)
 
-    messages = _build_edit_messages(recipe_json, payload.conversation, instruction)
+    # A draft is a fresh request: the chat history is deliberately not sent.
+    messages = _build_edit_messages(recipe_json, [], instruction)
 
     try:
         raw = await AIService()._call(messages, response_format={"type": "json_object"})
