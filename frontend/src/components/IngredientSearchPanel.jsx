@@ -89,14 +89,9 @@ export default function IngredientSearchPanel({ ingredientName, onSelect, onClos
       setSearching(true)
       searchIngredients(q, { includeExternal: false })
         .then((d) => {
-          const raw = d?.results ?? []
-          const qWords = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
-          const filtered = qWords.length === 0 ? raw : raw.filter((r) => {
-            const name = r.name.toLowerCase()
-            const matched = qWords.filter((w) => name.includes(w))
-            return matched.length / qWords.length >= 0.5
-          })
-          setResults(filtered)
+          // The server already ranks and filters; a second word filter here dropped
+          // names like "Onion, diced" because of the comma and the prep word.
+          setResults(d?.results ?? [])
         })
         .catch(() => setResults([]))
         .finally(() => setSearching(false))

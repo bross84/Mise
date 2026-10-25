@@ -10,6 +10,7 @@ from app.models.ingredient import Ingredient
 from app.models.blocked_ingredient import BlockedIngredient
 from app.schemas.ingredient import IngredientCreate, IngredientUpdate, IngredientResponse
 from app.services import nutrition
+from app.services.matching import core_words, stem
 
 router = APIRouter(prefix="/api/ingredients", tags=["ingredients"])
 
@@ -279,11 +280,11 @@ async def search_ingredients(
         # Local DB first — rank every ingredient against the query rather than hard-filtering.
         from rapidfuzz import fuzz as _fuzz
 
-        query_words = re.findall(r"\w+", q.lower())
+        query_words = core_words(q)
 
         def _local_score(name: str) -> float:
             nl = name.lower()
-            name_words = re.findall(r"\w+", nl)
+            name_words = [stem(w) for w in re.findall(r"\w+", nl)]
             total = 0.0
             for w in query_words:
                 if w in name_words:

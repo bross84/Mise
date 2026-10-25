@@ -31,6 +31,7 @@ from app.schemas.recipe import (
     RecipeUpdate,
     Suggestion,
 )
+from app.services import grams as grams_svc
 from app.services.ai import AIService
 from app.services.matching import IngredientMatcher
 from app.services.nutrition import UNIT_TO_GRAMS, ingredient_grams, macro_factor
@@ -46,8 +47,8 @@ Use exactly this structure:
 **Tags:** tag1, tag2, tag3
 
 ## Ingredients
-- Xg ingredient name
-- Xg ingredient name
+- 1 1/2 cups ingredient name
+- 2 tbsp ingredient name
 
 ## Steps
 1. Step content here
@@ -57,8 +58,10 @@ Use exactly this structure:
 Optional notes here
 
 Rules:
-- Convert ALL ingredient amounts to grams where possible
-- For items that cannot be weighed (e.g. "to taste"), use a reasonable gram estimate
+- If the source also gives grams (e.g. "1.3 lb (590 g) ground beef"), keep that gram figure on the line exactly as written
+- Keep every ingredient amount and unit exactly as the source gives it (cups, tbsp, oz, lb, grams, whatever it uses). NEVER convert units or estimate weights
+- If the source ingredient has no amount (e.g. "salt, to taste"), leave the amount off rather than inventing one
+- If the source groups ingredients under headers (e.g. "For the sauce"), keep them as "### Header" lines above their ingredients
 - Generate 2-4 relevant tags
 - Keep steps concise but complete
 - Return ONLY the markdown, no explanation, no code fences
@@ -273,6 +276,55 @@ class ParsedIngredientItem(BaseModel):
     amount: Optional[str] = None
     unit: Optional[str] = None
     group_name: Optional[str] = None
+    # Set when the amount was converted to grams: how it was worked out and what the line said.
+    grams_source: Optional[str] = None  # "exact" | "table" | "estimate"
+    original: Optional[str] = None
+    grams_note: Optional[str] = None
+
+
+_GRAMS_ESTIMATE_PROMPT = """You estimate how many grams each recipe ingredient line weighs. You get a JSON list; each entry has an "id", the original "line", the ingredient "name", "amount" and "unit". Use that specific ingredient's real density or typical weight (a tablespoon of olive oil is not a tablespoon of flour). A can, pinch, dash, clove, bunch or size word (large, medium) means the typical weight of one such item. Weigh the amount actually used: if the line says "drained", give the drained weight.
+
+Return ONLY a JSON object: {"items": [{"id": "<same id>", "grams": <number>}]}. "grams" is the weight of the WHOLE amount, not per unit. If it truly cannot be weighed (e.g. "to taste" with no amount), use null."""
+
+
+async def _convert_ingredients_to_grams(ai: AIService, items: list[ParsedIngredientItem]) -> None:
+    """Rewrite each item's amount/unit as grams in place: exact arithmetic first, then the density
+    and piece-weight tables, then an AI estimate. Items that can't be weighed keep their unit."""
+    pending: list[int] = []
+    for i, item in enumerate(items):
+        original = " ".join(p for p in (item.amount, item.unit) if p).strip() or None
+        result = grams_svc.convert_to_grams(item.name, item.amount, item.unit, item.raw)
+        if result is not None:
+            if (item.unit or "").strip().lower() in grams_svc.GRAM_UNITS and result.source == "exact":
+                continue  # already grams, nothing changed
+            item.amount, item.unit = f"{result.amount:g}", "g"
+            item.grams_source, item.original, item.grams_note = result.source, original, result.note
+        elif grams_svc.needs_estimate(item.amount, item.unit, result):
+            pending.append(i)
+
+    if not pending:
+        return
+    payload = [
+        {"id": str(i), "line": items[i].raw, "name": items[i].name, "amount": items[i].amount, "unit": items[i].unit}
+        for i in pending
+    ]
+    try:
+        reply = await ai.complete_with_system(_GRAMS_ESTIMATE_PROMPT, json.dumps(payload))
+        reply = re.sub(r"^```(?:json)?\s*|\s*```$", "", reply.strip(), flags=re.MULTILINE).strip()
+        estimates = {str(e.get("id")): e.get("grams") for e in json.loads(reply).get("items", []) if isinstance(e, dict)}
+    except Exception as exc:  # estimation is best-effort: leave the original units in place
+        logger.warning("Gram estimate failed: %s", exc)
+        return
+    for i in pending:
+        try:
+            value = float(estimates.get(str(i)))
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            item = items[i]
+            item.grams_source = "estimate"
+            item.original = " ".join(p for p in (item.amount, item.unit) if p).strip() or None
+            item.amount, item.unit = f"{grams_svc.round_grams(value):g}", "g"
 
 
 class ParseIngredientsResponse(BaseModel):
@@ -309,6 +361,8 @@ async def parse_ingredients_endpoint(payload: ParseIngredientsRequest):
         ingredients = [ParsedIngredientItem(**item) for item in data]
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to parse AI ingredient response: {exc}") from exc
+
+    await _convert_ingredients_to_grams(ai, ingredients)
 
     try:
         raw_tags = json.loads(tag_result)

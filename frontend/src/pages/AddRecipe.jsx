@@ -173,6 +173,65 @@ function MatchedIngredientList({ matchResults, onRerun, onRename }) {
   )
 }
 
+// ─── ConvertedIngredientList ──────────────────────────────────────────────────
+
+const SOURCE_LABELS = {
+  exact: 'exact',
+  table: 'from density table',
+  estimate: 'estimated',
+}
+
+// Shows every amount that was converted to grams, with the original line, so estimates can be checked
+// (and corrected) before saving. Estimated rows are listed first and highlighted.
+function ConvertedIngredientList({ parsed, onAmountChange }) {
+  const rows = parsed
+    .map((p, index) => ({ p, index }))
+    .filter(({ p }) => p.grams_source)
+    .sort((a, b) => Number(b.p.grams_source === 'estimate') - Number(a.p.grams_source === 'estimate'))
+  if (rows.length === 0) return null
+  const estimated = rows.filter(({ p }) => p.grams_source === 'estimate').length
+
+  return (
+    <div className="mt-4 rounded border border-theme bg-mise-900 p-4">
+      <h3 className="text-xs font-medium uppercase tracking-widest text-mise-500">Converted to grams</h3>
+      <p className="mt-1 text-xs text-mise-500">
+        {estimated > 0
+          ? `${estimated} ${estimated === 1 ? 'amount is' : 'amounts are'} estimated. Check ${estimated === 1 ? 'it' : 'them'} and edit the grams if it looks off.`
+          : 'Every amount was converted from exact weights or the density table.'}
+      </p>
+      <ul className="mt-3 space-y-2">
+        {rows.map(({ p, index }) => {
+          const isEstimate = p.grams_source === 'estimate'
+          return (
+            <li
+              key={index}
+              className={`flex items-center gap-3 rounded border bg-mise-950/50 px-3 py-2 ${isEstimate ? 'border-ember/60' : 'border-theme'}`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm text-mise-300">{p.name}</p>
+                <p className="text-[11px] text-mise-500">
+                  {p.original ? `${p.original} → ` : ''}{SOURCE_LABELS[p.grams_source]}
+                  {p.grams_note ? ` · ${p.grams_note}` : ''}
+                </p>
+              </div>
+              <label className="sr-only" htmlFor={`converted-grams-${index}`}>Grams for {p.name}</label>
+              <input
+                id={`converted-grams-${index}`}
+                type="text"
+                inputMode="decimal"
+                value={p.amount ?? ''}
+                onChange={(e) => onAmountChange(index, e.target.value)}
+                className="w-20 shrink-0 rounded border border-mise-800 bg-mise-950 px-2 py-1 text-right text-sm text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              />
+              <span className="shrink-0 text-xs text-mise-500">g</span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 // ─── AddRecipe ───────────────────────────────────────────────────────────────
 
 export default function AddRecipe() {
@@ -554,6 +613,12 @@ export default function AddRecipe() {
       {stage === 'review' && (
         <>
           {matching && <p className="mt-4 text-xs text-mise-500">Matching ingredients…</p>}
+          <ConvertedIngredientList
+            parsed={parsedIngredients}
+            onAmountChange={(index, value) =>
+              setParsedIngredients((prev) => prev.map((item, i) => (i === index ? { ...item, amount: value } : item)))
+            }
+          />
           <MatchedIngredientList
             matchResults={matchResults}
             onRename={(index, newName) => {
