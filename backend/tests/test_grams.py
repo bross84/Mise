@@ -48,6 +48,14 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(r.source, "estimate")
         self.assertAlmostEqual(r.amount, 791, delta=2)
 
+    def test_stated_grams_beat_conversion(self):
+        r = convert_to_grams("Ground Beef", "1.3", "lb", raw="1.3 lb (590 g) Ground beef, 93/7")
+        self.assertEqual((r.amount, r.source), (590, "exact"))
+        r = convert_to_grams("Beans", "3", "x 15.5 oz can", raw="3 x 15.5 oz can (780 g) Beans, drained and rinsed")
+        self.assertEqual((r.amount, r.source), (780, "exact"))
+        r = convert_to_grams("Flour", "1", "cup", raw="1 cup / 120 g flour")
+        self.assertEqual(r.amount, 120)
+
     def test_count_uses_piece_table(self):
         r = convert_to_grams("Onion", "2", None)
         self.assertEqual((r.amount, r.source), (220, "table"))

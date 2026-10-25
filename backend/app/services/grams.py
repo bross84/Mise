@@ -69,6 +69,9 @@ _FRACTIONS = {"½": 0.5, "⅓": 1 / 3, "⅔": 2 / 3, "¼": 0.25, "¾": 0.75, "�
 # "3 x 15.5 oz can": count x size unit
 _MULTI_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*([a-zA-Z.]+)", re.IGNORECASE)
 
+# Grams the recipe itself states, e.g. "1.3 lb (590 g) ground beef" or "1 cup / 120 g flour".
+_STATED_GRAMS_RE = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)(?:\s*[-–]\s*\d+(?:\.\d+)?)?\s*(?:g|gm|grams?)(?![a-z])", re.IGNORECASE)
+
 DRAINED_FRACTION = 0.6  # drained beans/vegetables weigh about 60% of the labelled can weight
 
 
@@ -134,6 +137,11 @@ def density_for(name: str) -> float | None:
 def convert_to_grams(name: str, amount_text: str | None, unit: str | None, raw: str = "") -> GramsResult | None:
     """Grams for one ingredient when the tables can answer it; None when it must stay as-is
     or go to the AI fallback (see needs_estimate)."""
+    # Grams written in the recipe win over any conversion.
+    stated = _STATED_GRAMS_RE.search(raw or "")
+    if stated and float(stated.group(1)) > 0:
+        return GramsResult(round_grams(float(stated.group(1))), "exact", "Grams as written in the recipe")
+
     amount = parse_amount(amount_text)
     if amount is None or amount <= 0:
         return None

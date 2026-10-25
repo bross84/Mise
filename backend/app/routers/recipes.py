@@ -58,6 +58,7 @@ Use exactly this structure:
 Optional notes here
 
 Rules:
+- If the source also gives grams (e.g. "1.3 lb (590 g) ground beef"), keep that gram figure on the line exactly as written
 - Keep every ingredient amount and unit exactly as the source gives it (cups, tbsp, oz, lb, grams, whatever it uses). NEVER convert units or estimate weights
 - If the source ingredient has no amount (e.g. "salt, to taste"), leave the amount off rather than inventing one
 - If the source groups ingredients under headers (e.g. "For the sauce"), keep them as "### Header" lines above their ingredients
