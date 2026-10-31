@@ -7,6 +7,7 @@ import ShoppingListModal from '../components/ShoppingListModal.jsx'
 import RecipeImage from '../components/RecipeImage.jsx'
 import ImportRecipeModal from '../components/ImportRecipeModal.jsx'
 import { resolveUploadUrl } from '../utils/uploads.js'
+import { stripMarkdown } from '../utils/text.js'
 
 const tagHeaderTheme = {
   beef: 'from-rose-900/60 via-slate-900 to-slate-950 bg-rose-900/30',
@@ -121,7 +122,7 @@ function LargeCard({ recipe, rating, onOpen, onRate, onDelete, selectMode, selec
         </div>
 
         <p className="mt-3 line-clamp-3 text-sm text-mise-500">
-          {recipe.notes || 'No notes available for this recipe.'}
+          {stripMarkdown(recipe.notes) || 'No notes available for this recipe.'}
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2 pb-4">

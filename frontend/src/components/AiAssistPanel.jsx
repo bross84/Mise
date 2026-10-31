@@ -205,7 +205,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
       )}
       <aside
         aria-hidden={!open}
-        className={`fixed right-0 top-0 z-50 flex h-screen w-full flex-col border-l border-mise-800 bg-mise-950 transition-transform sm:w-[26rem] ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-mise-800 bg-mise-950 transition-transform sm:w-[26rem] ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
