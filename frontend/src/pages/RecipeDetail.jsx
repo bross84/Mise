@@ -1413,7 +1413,7 @@ function RecipeDetail() {
                           }}
                           className={`rounded border border-theme bg-mise-950/50 p-2 ${isUnlinked(ing) ? 'border-l-2 !border-l-ember' : ''} ${dragIngredientId === ing.id ? 'opacity-40' : ''} ${dropTarget?.id === ing.id && dragIngredientId !== ing.id ? (dropTarget.position === 'before' ? '!border-t-2 !border-t-ember' : '!border-b-2 !border-b-ember') : ''}`}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                             <span
                               draggable
                               onDragStart={(e) => {
@@ -1438,7 +1438,7 @@ function RecipeDetail() {
                               value={ing.amount}
                               onChange={(e) => updateDraftIngredient(ing.id, 'amount', e.target.value)}
                               placeholder="Amt"
-                              className={`${inputRowCls} w-20 shrink-0`}
+                              className={`${inputRowCls} w-16 min-w-0 flex-1 sm:w-20 sm:flex-none sm:shrink-0`}
                             />
                             <label htmlFor={`edit-ing-unit-${ing.id}`} className="sr-only">Unit</label>
                             <input
@@ -1447,7 +1447,7 @@ function RecipeDetail() {
                               value={ing.unit}
                               onChange={(e) => updateDraftIngredient(ing.id, 'unit', e.target.value)}
                               placeholder="Unit"
-                              className={`${inputRowCls} w-24 shrink-0`}
+                              className={`${inputRowCls} w-16 min-w-0 flex-1 sm:w-24 sm:flex-none sm:shrink-0`}
                             />
                             <label htmlFor={`edit-ing-name-${ing.id}`} className="sr-only">Ingredient {index + 1} name</label>
                             <input
@@ -1457,7 +1457,7 @@ function RecipeDetail() {
                               onChange={(e) => updateDraftIngredient(ing.id, 'name', e.target.value)}
                               onFocus={() => setOpenIngredientSearchId(ing.id)}
                               placeholder="Ingredient"
-                              className={`${inputRowCls} min-w-0 flex-1`}
+                              className={`${inputRowCls} order-last w-full basis-full sm:order-none sm:w-auto sm:basis-0 sm:min-w-0 sm:flex-1`}
                             />
                             {ing.name.trim() && (
                               <button
