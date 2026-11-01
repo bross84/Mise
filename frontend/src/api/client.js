@@ -82,6 +82,28 @@ export function parseRecipe(data) {
   })
 }
 
+export async function ocrImage(file) {
+  const form = new FormData()
+  form.append('file', file, file.name || 'screenshot.png')
+  const response = await fetch(`${BASE_URL}/recipes/ocr-image`, {
+    method: 'POST',
+    body: form,
+  })
+
+  if (!response.ok) {
+    let message = `Could not read the image (status ${response.status}).`
+    try {
+      const body = await response.json()
+      message = typeof body?.detail === 'string' ? body.detail : message
+    } catch {
+      // Keep the generic error message.
+    }
+    throw new Error(message)
+  }
+
+  return response.json()
+}
+
 export function importMarkdown(markdown) {
   return request('/recipes/import-markdown', {
     method: 'POST',
