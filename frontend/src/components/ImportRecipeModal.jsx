@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { Upload, X } from 'lucide-react'
-import { importMarkdown, parseRecipe } from '../api/client.js'
+import { ImageUp, Upload, X } from 'lucide-react'
+import { importMarkdown, ocrImage, parseRecipe } from '../api/client.js'
 
 export default function ImportRecipeModal({ onClose, onImported }) {
   const [tab, setTab] = useState('url') // 'url' | 'text' | 'markdown'
@@ -9,7 +9,37 @@ export default function ImportRecipeModal({ onClose, onImported }) {
   const [markdown, setMarkdown] = useState('')
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
+  const [reading, setReading] = useState(false)
   const fileRef = useRef(null)
+  const imageRef = useRef(null)
+
+  // Reads an image (pasted screenshot or picked photo) into the text box. The result is raw OCR
+  // text, so it stays editable and goes through the same /parse cleanup as typed text on Import.
+  const readImage = async (file) => {
+    setError('')
+    setReading(true)
+    try {
+      const { text: read } = await ocrImage(file)
+      setText((current) => (current.trim() ? `${current.trimEnd()}\n\n${read}` : read))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read the image.')
+    } finally {
+      setReading(false)
+    }
+  }
+
+  const handleTextPaste = (e) => {
+    const image = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith('image/'))
+    if (!image) return
+    e.preventDefault()
+    readImage(image)
+  }
+
+  const handleImagePicked = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) readImage(file)
+  }
 
   const handleFile = (e) => {
     const file = e.target.files?.[0]
@@ -94,14 +124,28 @@ export default function ImportRecipeModal({ onClose, onImported }) {
           </div>
         ) : tab === 'text' ? (
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-mise-500">
-              Paste text copied from a screenshot or cookbook photo (for example with a screen OCR tool).
-              Broken lines, stray bullets and odd numbering are cleaned up for you, and you can review everything before saving.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-xs text-mise-500">
+                Paste a screenshot (Ctrl+V), choose an image, or paste text you already copied.
+                Broken lines, stray bullets and odd numbering are cleaned up for you, and you can review everything before saving.
+              </p>
+              <button
+                type="button"
+                onClick={() => imageRef.current?.click()}
+                disabled={reading}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                <ImageUp size={11} />
+                Choose image
+              </button>
+              <input ref={imageRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleImagePicked} />
+            </div>
             <textarea
               rows={12}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              onPaste={handleTextPaste}
+              readOnly={reading}
               placeholder={'INGREDIENTS\n. 2 cups flour\n. 1 egg, beaten\n\nDIRECTIONS\n. 1. Mix everything together.'}
               className="w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 font-mono text-xs text-mise-300 placeholder:text-mise-600 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
               autoFocus
@@ -131,6 +175,8 @@ export default function ImportRecipeModal({ onClose, onImported }) {
           </div>
         )}
 
+        {reading && <p className="text-xs text-mise-500">Reading image…</p>}
+
         {error && (
           <p className="rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>
         )}
@@ -142,7 +188,7 @@ export default function ImportRecipeModal({ onClose, onImported }) {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={importing || !{ url, text, markdown }[tab].trim()}
+            disabled={importing || reading || !{ url, text, markdown }[tab].trim()}
             className="rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           >
             {importing ? 'Importing…' : 'Import →'}

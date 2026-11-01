@@ -13,7 +13,8 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -32,6 +33,7 @@ from app.schemas.recipe import (
     Suggestion,
 )
 from app.services import grams as grams_svc
+from app.services import ocr as ocr_svc
 from app.services.ai import AIService
 from app.services.matching import IngredientMatcher
 from app.services.nutrition import UNIT_TO_GRAMS, ingredient_grams, macro_factor
@@ -81,6 +83,10 @@ class ParseRequest(BaseModel):
 
 class ParseResponse(BaseModel):
     markdown: str
+
+
+class OcrResponse(BaseModel):
+    text: str
 
 
 def _extract_jsonld_recipe(html: str) -> Optional[str]:
@@ -206,6 +212,30 @@ async def parse_recipe(payload: ParseRequest):
     markdown = re.sub(r"^n-\s", "- ", markdown, flags=re.MULTILINE)
 
     return ParseResponse(markdown=markdown)
+
+
+@router.post("/ocr-image", response_model=OcrResponse)
+async def ocr_image(file: UploadFile = File(...)):
+    """Read the text out of a screenshot or photo; /parse then cleans it into a recipe."""
+    data = await file.read(ocr_svc.MAX_IMAGE_BYTES + 1)
+    if len(data) > ocr_svc.MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail=f"Image must be {ocr_svc.MAX_IMAGE_BYTES // (1024 * 1024)} MB or smaller.")
+
+    try:
+        text = await run_in_threadpool(ocr_svc.extract_text, data)
+    except ocr_svc.UnsupportedImageError as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    except ocr_svc.OcrUnavailableError as exc:
+        logger.error("OCR unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ocr_svc.OcrFailedError as exc:
+        logger.error("OCR failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    text = text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="No text found in that image. Try a sharper or larger capture.")
+    return OcrResponse(text=text)
 
 
 INGREDIENT_PARSE_SYSTEM_PROMPT = """You are an ingredient parser. Convert ingredient text into a JSON array.
