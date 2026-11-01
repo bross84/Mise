@@ -183,25 +183,36 @@ const SOURCE_LABELS = {
 
 // Shows every amount that was converted to grams, with the original line, so estimates can be checked
 // (and corrected) before saving. Estimated rows are listed first and highlighted.
-function ConvertedIngredientList({ parsed, onAmountChange }) {
+function ConvertedIngredientList({ parsed, onKeepOriginal }) {
   const rows = parsed
     .map((p, index) => ({ p, index }))
     .filter(({ p }) => p.grams_source)
     .sort((a, b) => Number(b.p.grams_source === 'estimate') - Number(a.p.grams_source === 'estimate'))
   if (rows.length === 0) return null
-  const estimated = rows.filter(({ p }) => p.grams_source === 'estimate').length
+  const estimated = rows.filter(({ p }) => p.grams_source === 'estimate' && !p.kept_original).length
+  const allKept = rows.every(({ p }) => p.kept_original)
 
   return (
     <div className="mt-4 rounded border border-theme bg-mise-900 p-4">
-      <h3 className="text-xs font-medium uppercase tracking-widest text-mise-500">Converted to grams</h3>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-xs font-medium uppercase tracking-widest text-mise-500">Converted to grams</h3>
+        <button
+          type="button"
+          onClick={() => onKeepOriginal(rows.map(({ index }) => index), !allKept)}
+          className="shrink-0 rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+        >
+          {allKept ? 'Convert all to grams' : 'Keep all original'}
+        </button>
+      </div>
       <p className="mt-1 text-xs text-mise-500">
         {estimated > 0
-          ? `${estimated} ${estimated === 1 ? 'amount is' : 'amounts are'} estimated. Check ${estimated === 1 ? 'it' : 'them'} and edit the grams if it looks off.`
-          : 'Every amount was converted from exact weights or the density table.'}
+          ? `${estimated} ${estimated === 1 ? 'amount is' : 'amounts are'} estimated. Check ${estimated === 1 ? 'it' : 'them'}, edit the grams, or keep the recipe's original amount.`
+          : `Keep the recipe's original amount on any row you would rather enter yourself.`}
       </p>
       <ul className="mt-3 space-y-2">
         {rows.map(({ p, index }) => {
-          const isEstimate = p.grams_source === 'estimate'
+          const isEstimate = p.grams_source === 'estimate' && !p.kept_original
+          const originalText = p.original || [p.original_amount, p.original_unit].filter(Boolean).join(' ')
           return (
             <li
               key={index}
@@ -210,20 +221,34 @@ function ConvertedIngredientList({ parsed, onAmountChange }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-mise-300">{p.name}</p>
                 <p className="text-[11px] text-mise-500">
-                  {p.original ? `${p.original} → ` : ''}{SOURCE_LABELS[p.grams_source]}
-                  {p.grams_note ? ` · ${p.grams_note}` : ''}
+                  {p.kept_original
+                    ? `Keeping original: ${originalText || 'no amount'}`
+                    : `${originalText ? `${originalText} → ` : ''}${SOURCE_LABELS[p.grams_source]}${p.grams_note ? ` · ${p.grams_note}` : ''}`}
                 </p>
               </div>
-              <label className="sr-only" htmlFor={`converted-grams-${index}`}>Grams for {p.name}</label>
-              <input
-                id={`converted-grams-${index}`}
-                type="text"
-                inputMode="decimal"
-                value={p.amount ?? ''}
-                onChange={(e) => onAmountChange(index, e.target.value)}
-                className="w-20 shrink-0 rounded border border-mise-800 bg-mise-950 px-2 py-1 text-right text-sm text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              />
-              <span className="shrink-0 text-xs text-mise-500">g</span>
+              {p.kept_original ? (
+                <span className="shrink-0 text-sm text-mise-400">{originalText || '—'}</span>
+              ) : (
+                <>
+                  <label className="sr-only" htmlFor={`converted-grams-${index}`}>Grams for {p.name}</label>
+                  <input
+                    id={`converted-grams-${index}`}
+                    type="text"
+                    inputMode="decimal"
+                    value={p.amount ?? ''}
+                    onChange={(e) => onKeepOriginal([index], false, e.target.value)}
+                    className="w-20 shrink-0 rounded border border-mise-800 bg-mise-950 px-2 py-1 text-right text-sm text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                  />
+                  <span className="shrink-0 text-xs text-mise-500">g</span>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => onKeepOriginal([index], !p.kept_original)}
+                className="shrink-0 rounded border border-mise-800 px-2 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                {p.kept_original ? 'Use grams' : 'Keep original'}
+              </button>
             </li>
           )
         })}
@@ -615,8 +640,18 @@ export default function AddRecipe() {
           {matching && <p className="mt-4 text-xs text-mise-500">Matching ingredients…</p>}
           <ConvertedIngredientList
             parsed={parsedIngredients}
-            onAmountChange={(index, value) =>
-              setParsedIngredients((prev) => prev.map((item, i) => (i === index ? { ...item, amount: value } : item)))
+            onKeepOriginal={(indexes, keep, editedGrams) =>
+              setParsedIngredients((prev) => prev.map((item, i) => {
+                if (!indexes.includes(i) || !item.grams_source) return item
+                if (editedGrams !== undefined) return { ...item, amount: editedGrams }
+                if (keep && !item.kept_original) {
+                  return { ...item, kept_original: true, grams_amount: item.amount, amount: item.original_amount ?? null, unit: item.original_unit ?? null }
+                }
+                if (!keep && item.kept_original) {
+                  return { ...item, kept_original: false, amount: item.grams_amount, unit: 'g' }
+                }
+                return item
+              }))
             }
           />
           <MatchedIngredientList
