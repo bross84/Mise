@@ -194,4 +194,5 @@ def needs_estimate(amount_text: str | None, unit: str | None, converted: GramsRe
     amount = parse_amount(amount_text)
     if amount is None or amount <= 0:
         return False
-    return _first_unit_word(unit) not in GRAM_UNITS
+    # "1 serving" is weighed from the matched ingredient's own serving weight, which beats a guess.
+    return _first_unit_word(unit) not in GRAM_UNITS | {"serving", "servings"}

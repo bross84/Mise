@@ -285,6 +285,8 @@ class ParsedIngredientItem(BaseModel):
     # Set when the amount was converted to grams: how it was worked out and what the line said.
     grams_source: Optional[str] = None  # "exact" | "table" | "estimate"
     original: Optional[str] = None
+    original_amount: Optional[str] = None
+    original_unit: Optional[str] = None
     grams_note: Optional[str] = None
 
 
@@ -299,12 +301,14 @@ async def _convert_ingredients_to_grams(ai: AIService, items: list[ParsedIngredi
     pending: list[int] = []
     for i, item in enumerate(items):
         original = " ".join(p for p in (item.amount, item.unit) if p).strip() or None
+        orig_amount, orig_unit = item.amount, item.unit
         result = grams_svc.convert_to_grams(item.name, item.amount, item.unit, item.raw)
         if result is not None:
             if (item.unit or "").strip().lower() in grams_svc.GRAM_UNITS and result.source == "exact":
                 continue  # already grams, nothing changed
             item.amount, item.unit = f"{result.amount:g}", "g"
             item.grams_source, item.original, item.grams_note = result.source, original, result.note
+            item.original_amount, item.original_unit = orig_amount, orig_unit
         elif grams_svc.needs_estimate(item.amount, item.unit, result):
             pending.append(i)
 
@@ -330,6 +334,7 @@ async def _convert_ingredients_to_grams(ai: AIService, items: list[ParsedIngredi
             item = items[i]
             item.grams_source = "estimate"
             item.original = " ".join(p for p in (item.amount, item.unit) if p).strip() or None
+            item.original_amount, item.original_unit = item.amount, item.unit
             item.amount, item.unit = f"{grams_svc.round_grams(value):g}", "g"
 
 

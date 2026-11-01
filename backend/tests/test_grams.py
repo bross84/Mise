@@ -60,6 +60,10 @@ class ConvertTests(unittest.TestCase):
         r = convert_to_grams("Onion", "2", None)
         self.assertEqual((r.amount, r.source), (220, "table"))
 
+    def test_serving_units_are_not_guessed(self):
+        self.assertFalse(needs_estimate("1", "Serving", None))
+        self.assertFalse(needs_estimate("2", "servings", None))
+
     def test_grams_and_missing_amounts_are_left_alone(self):
         self.assertFalse(needs_estimate("30", "g", None))
         self.assertFalse(needs_estimate(None, None, None))
