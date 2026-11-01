@@ -3,8 +3,9 @@ import { Upload, X } from 'lucide-react'
 import { importMarkdown, parseRecipe } from '../api/client.js'
 
 export default function ImportRecipeModal({ onClose, onImported }) {
-  const [tab, setTab] = useState('url') // 'url' | 'markdown'
+  const [tab, setTab] = useState('url') // 'url' | 'text' | 'markdown'
   const [url, setUrl] = useState('')
+  const [text, setText] = useState('')
   const [markdown, setMarkdown] = useState('')
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
@@ -27,6 +28,10 @@ export default function ImportRecipeModal({ onClose, onImported }) {
       if (tab === 'url') {
         if (!url.trim()) { setError('Enter a recipe URL.'); setImporting(false); return }
         const parsed = await parseRecipe({ url: url.trim() })
+        data = await importMarkdown(parsed.markdown)
+      } else if (tab === 'text') {
+        if (!text.trim()) { setError('Paste the recipe text first.'); setImporting(false); return }
+        const parsed = await parseRecipe({ text: text.trim() })
         data = await importMarkdown(parsed.markdown)
       } else {
         if (!markdown.trim()) { setError('Paste or load a markdown file first.'); setImporting(false); return }
@@ -64,6 +69,9 @@ export default function ImportRecipeModal({ onClose, onImported }) {
           <button type="button" className={tabCls('url')} onClick={() => { setTab('url'); setError('') }}>
             From URL
           </button>
+          <button type="button" className={tabCls('text')} onClick={() => { setTab('text'); setError('') }}>
+            From Text
+          </button>
           <button type="button" className={tabCls('markdown')} onClick={() => { setTab('markdown'); setError('') }}>
             From Markdown
           </button>
@@ -81,6 +89,21 @@ export default function ImportRecipeModal({ onClose, onImported }) {
               onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit() }}
               placeholder="https://www.seriouseats.com/..."
               className="w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 text-sm text-mise-300 placeholder:text-mise-600 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              autoFocus
+            />
+          </div>
+        ) : tab === 'text' ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-mise-500">
+              Paste text copied from a screenshot or cookbook photo (for example with a screen OCR tool).
+              Broken lines, stray bullets and odd numbering are cleaned up for you, and you can review everything before saving.
+            </p>
+            <textarea
+              rows={12}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={'INGREDIENTS\n. 2 cups flour\n. 1 egg, beaten\n\nDIRECTIONS\n. 1. Mix everything together.'}
+              className="w-full rounded border border-mise-800 bg-mise-900 px-3 py-2.5 font-mono text-xs text-mise-300 placeholder:text-mise-600 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
               autoFocus
             />
           </div>
@@ -119,7 +142,7 @@ export default function ImportRecipeModal({ onClose, onImported }) {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={importing || (tab === 'url' ? !url.trim() : !markdown.trim())}
+            disabled={importing || !{ url, text, markdown }[tab].trim()}
             className="rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           >
             {importing ? 'Importing…' : 'Import →'}

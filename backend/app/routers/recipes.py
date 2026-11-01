@@ -64,6 +64,12 @@ Rules:
 - If the source groups ingredients under headers (e.g. "For the sauce"), keep them as "### Header" lines above their ingredients
 - Generate 2-4 relevant tags
 - Keep steps concise but complete
+- The input may be raw OCR output from a screenshot or a scanned cookbook page. Repair it, but only its layout, never its content:
+  - Text is often hard-wrapped to the width of the original page, so one ingredient or step can span several lines. Join the pieces back into a single item, including a "(Brand: ...)" note that was split across lines
+  - Each book marks items its own way. Where bullets are present (a stray ".", "•", "·", "■", "o", "-", "*", a checkbox), treat each marker as the start of a new item and drop the marker itself. Where there are none, a line that begins lowercase, with "&", "and", "or" or a closing parenthesis, or that leaves a parenthesis open on the line above, continues the previous item
+  - Step numbers may be doubled or oddly punctuated (". 1.", "1)", "Step 1"). Renumber cleanly as "1. 2. 3." in order
+  - Do not guess a layout from one example: infer how this particular text separates its items from the text itself
+  - Fix obvious OCR misreads only when the intended character is unambiguous from context (e.g. "V2 cup" or "1/2 cup" for ½, "l tsp" for 1 tsp), and never add, remove or change a quantity or ingredient. If a quantity is unreadable, keep it as written
 - Return ONLY the markdown, no explanation, no code fences
 - Multiple recipes separated by --- in input should each get their own markdown block separated by ---"""
 
