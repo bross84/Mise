@@ -14,9 +14,12 @@ OCR_TIMEOUT_S = 60
 INK_THRESHOLD = 140  # grayscale level below which a pixel counts as text
 BLANK_MAX = 2  # a row/column inked less than ~1% is blank (tolerates JPEG noise)
 MAX_LINE_FRACTION = 0.08  # ink rows taller than this share of the page are photos, not text lines
-GUTTER_LINES = 0.8  # a column gutter is at least this wide; word spaces are about 0.3
+GUTTER_LINES = 0.8  # a column gutter is at least this many line heights wide...
+GUTTER_WORD_SPACES = 3  # ...and at least this many of the page's own word spaces
 MIN_COLUMN_LINES = 4  # a block shorter than this many lines can't be a column
 MIN_COLUMN_WIDTH_LINES = 3  # nor can anything narrower than this many line heights
+HEADING_RATIO = 1.8  # a line taller than this many typical lines is a heading, not column text
+MAX_COLUMN_GAP = 4  # column text more than this many line heights below the columns has ended
 MIN_REGION_LINES = 2
 BACKGROUND_TOLERANCE = 24  # grayscale distance from the page background that counts as "something is here"
 PHOTO_DENSITY = 0.8  # a cell this full of non-background pixels is solid; thin text strokes never are
@@ -104,12 +107,45 @@ def _line_height(ink: Image.Image) -> int:
     return lines[len(lines) // 2] if lines else 0
 
 
-def _split_columns(ink: Image.Image, box: Box, line_h: int) -> list[Box]:
+def _text_lines(ink: Image.Image, box: Box, line_h: int) -> tuple[list[tuple[int, int]], list[bytes]]:
+    """Text lines in the box (row ranges) with each one's column profile. Slivers (letter tips) are dropped."""
+    left, top, right, bottom = box
+    min_height = max(line_h // 3, 3)
+    lines = [(s, e) for s, e in _spans(_profile(ink, box, columns=False), min_gap=1) if e - s >= min_height]
+    return lines, [_profile(ink, (left, top + s, right, top + e), columns=True) for s, e in lines]
+
+
+def _word_spaces(profile: bytes, shortest: int) -> list[int]:
+    """Widths of the blank stretches between ink inside one line (not its margins) of at least `shortest`."""
+    widths: list[int] = []
+    run, seen_ink = 0, False
+    for value in profile:
+        if value > BLANK_MAX:
+            if seen_ink and run >= shortest:
+                widths.append(run)
+            seen_ink, run = True, 0
+        elif seen_ink:
+            run += 1
+    return widths
+
+
+def _gutter_width(profiles: list[bytes], line_h: int) -> int:
+    """Narrowest gap that counts as a column gutter on this page: clearly wider than its word spaces.
+
+    Line height alone is a poor yardstick (anti-aliased text measures short), and a gutter set near
+    the word-space width finds "columns" in any paragraph where two spaces happen to line up.
+    """
+    widths = sorted(w for profile in profiles for w in _word_spaces(profile, max(line_h // 3, 3)))
+    word_space = widths[len(widths) // 2] if widths else 0
+    return max(int(GUTTER_LINES * line_h), GUTTER_WORD_SPACES * word_space, 4)
+
+
+def _split_columns(ink: Image.Image, box: Box, line_h: int, gutter: int) -> list[Box]:
     left, top, right, bottom = box
     rows = _spans(_profile(ink, box, columns=False), min_gap=bottom - top)
     if not rows or rows[0][1] - rows[0][0] < MIN_COLUMN_LINES * line_h:
         return [box]  # judged on the text itself, not the blank page around it
-    spans = _spans(_profile(ink, box, columns=True), min_gap=max(int(GUTTER_LINES * line_h), 4))
+    spans = _spans(_profile(ink, box, columns=True), min_gap=gutter)
     merged: list[tuple[int, int]] = []
     for span in spans:
         narrow = min(span[1] - span[0], merged[-1][1] - merged[-1][0]) < MIN_COLUMN_WIDTH_LINES * line_h if merged else False
@@ -139,59 +175,76 @@ def _gaps(profile: bytes, min_width: int) -> list[tuple[int, int]]:
     return gaps
 
 
-def _column_zones(ink: Image.Image, box: Box, line_h: int) -> list[tuple[int, int]]:
+def _column_zones(lines: list[tuple[int, int]], profiles: list[bytes], gutter: int) -> list[tuple[int, int]]:
     """Row ranges where one gutter lines up across at least MIN_COLUMN_LINES consecutive text lines.
 
     Lines are checked one at a time, so a heading or full-width paragraph that crosses the gutter
-    only ends the range instead of hiding the gutter from the whole page. Photos have been whited out
-    by then, so a gap beside a photo has no text on its other side and never counts as a gutter.
+    only ends the range instead of hiding the gutter from the whole page. A range runs from its first
+    to its last line that has text on both sides of the gutter, so a one-sided line (a heading just
+    under the columns) is never swept into it. Photos have been whited out by then, so a gap beside
+    a photo has no text on its other side and never counts.
     """
-    left, top, right, bottom = box
-    min_gutter = max(int(GUTTER_LINES * line_h), 4)
-    lines = _spans(_profile(ink, box, columns=False), min_gap=1)
     zones: list[tuple[int, int]] = []
 
-    def close(first: int, last: int, gutter: tuple[int, int]) -> None:
+    def two_sided(index: int, span: tuple[int, int]) -> bool:
+        profile = profiles[index]
+        return any(v > BLANK_MAX for v in profile[: span[0]]) and any(v > BLANK_MAX for v in profile[span[1]:])
+
+    heights = sorted(end - start for start, end in lines)
+    typical = heights[len(heights) // 2] if heights else 0
+
+    def continues(inside: int, outside: int) -> bool:
+        """A one-sided line next to the columns that is still part of them: body-sized text, close by."""
+        gap = lines[outside][0] - lines[inside][1] if outside > inside else lines[inside][0] - lines[outside][1]
+        return lines[outside][1] - lines[outside][0] <= HEADING_RATIO * typical and gap <= MAX_COLUMN_GAP * typical
+
+    def close(first: int, last: int, span: tuple[int, int]) -> None:
+        track_first, track_last = first, last
+        while first <= last and not two_sided(first, span):
+            first += 1
+        while last >= first and not two_sided(last, span):
+            last -= 1
         if last - first + 1 < MIN_COLUMN_LINES:
             return
-        rows = (lines[first][0], lines[last][1])
-        columns = _profile(ink, (left, top + rows[0], right, top + rows[1]), columns=True)
-        text_before = any(value > BLANK_MAX for value in columns[: gutter[0]])
-        text_after = any(value > BLANK_MAX for value in columns[gutter[1]:])
-        if text_before and text_after:
-            zones.append(rows)
+        while last < track_last and continues(last, last + 1):
+            last += 1
+        while first > track_first and continues(first, first - 1):
+            first -= 1
+        zones.append((lines[first][0], lines[last][1]))
 
     tracks: list[tuple[int, tuple[int, int]]] = []  # (first line, gutter narrowed so far)
-    for index, (start, end) in enumerate(lines):
-        gaps = _gaps(_profile(ink, (left, top + start, right, top + end), columns=True), min_gutter)
+    for index, profile in enumerate(profiles):
+        gaps = _gaps(profile, gutter)
         kept: list[tuple[int, tuple[int, int]]] = []
         for first, (g_start, g_end) in tracks:
             overlaps = [(max(g_start, a), min(g_end, b)) for a, b in gaps]
-            overlaps = [(a, b) for a, b in overlaps if b - a >= min_gutter]
+            overlaps = [(a, b) for a, b in overlaps if b - a >= gutter]
             if overlaps:
                 kept.append((first, max(overlaps, key=lambda span: span[1] - span[0])))
             else:
                 close(first, index - 1, (g_start, g_end))
         for a, b in gaps:
-            if not any(min(b, k_end) - max(a, k_start) >= min_gutter for _, (k_start, k_end) in kept):
+            if not any(min(b, k_end) - max(a, k_start) >= gutter for _, (k_start, k_end) in kept):
                 kept.append((index, (a, b)))
         tracks = kept
-    for first, gutter in tracks:
-        close(first, len(lines) - 1, gutter)
-
+    for first, span in tracks:
+        close(first, len(profiles) - 1, span)
     return sorted(set(zones))
 
 
 def _layout(ink: Image.Image, box: Box, line_h: int) -> list[Box]:
     """Blocks in reading order: each multi-column stretch as its columns, the rest full width."""
     left, top, right, bottom = box
+    lines, profiles = _text_lines(ink, box, line_h)
+    gutter = _gutter_width(profiles, line_h)
+
     # Gutters can be found twice or falsely (a speck beside a photo, a gap that happens to line up).
     # Take the tallest stretches first and only ones that really split into columns and don't overlap.
     chosen: list[tuple[int, int, list[Box]]] = []
-    for zone_top, zone_bottom in sorted(_column_zones(ink, box, line_h), key=lambda zone: zone[0] - zone[1]):
+    for zone_top, zone_bottom in sorted(_column_zones(lines, profiles, gutter), key=lambda zone: zone[0] - zone[1]):
         if any(zone_top < taken_bottom and taken_top < zone_bottom for taken_top, taken_bottom, _ in chosen):
             continue
-        columns = _split_columns(ink, (left, top + zone_top, right, top + zone_bottom), line_h)
+        columns = _split_columns(ink, (left, top + zone_top, right, top + zone_bottom), line_h, gutter)
         if len(columns) > 1:
             chosen.append((zone_top, zone_bottom, columns))
 
