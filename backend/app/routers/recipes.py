@@ -1397,6 +1397,7 @@ def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(g
                     "total_grams": grams,
                     "dominant_unit": unit_raw,
                     "dominant_grams": grams if grams is not None else 0.0,
+                    "dominant_amount": amount if grams is not None else 0.0,
                     "is_count": grams is None,
                     "count_total": amount if grams is None else 0.0,
                 }
@@ -1407,6 +1408,7 @@ def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(g
                     if grams > entry["dominant_grams"]:
                         entry["dominant_unit"] = unit_raw
                         entry["dominant_grams"] = grams
+                        entry["dominant_amount"] = amount
                     entry["is_count"] = False
                 else:
                     entry["count_total"] += amount
@@ -1422,7 +1424,12 @@ def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(g
         else:
             total_g = entry["total_grams"] or 0.0
             dom_unit = entry["dominant_unit"] or "g"
-            factor = UNIT_TO_GRAMS.get(dom_unit.lower(), 1.0)
+            factor = UNIT_TO_GRAMS.get(dom_unit.lower())
+            if factor is None:
+                # "slices", "whole", "serving"…: grams came from the ingredient's piece weight,
+                # so convert back with that same weight or the grams get labelled as pieces.
+                per_unit = entry["dominant_grams"] / entry["dominant_amount"] if entry["dominant_amount"] else 0.0
+                factor = per_unit if per_unit > 0 else 1.0
             converted = total_g / factor
             lines.append(f"{name} - {_fmt_amount(converted)} {dom_unit}")
 
