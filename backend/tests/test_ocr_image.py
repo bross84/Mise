@@ -250,8 +250,31 @@ class FindRegionsTests(unittest.TestCase):
                 heading, left, right, steps = boxes
                 self.assertLess(left[2], right[0])
                 self.assertEqual(left[1], right[1])  # both columns cover the same rows
+                self.assertEqual(left[3], right[3])
                 self.assertLessEqual(heading[3], left[1])
                 self.assertGreaterEqual(steps[1], left[3])
+                # The left column runs on past the right one to its last line ("and red chili flakes",
+                # about y=396 on the card) but not on to the INSTRUCTIONS heading (y=440).
+                fit = prepared.width / 780
+                self.assertGreaterEqual(left[3], 390 * fit)
+                self.assertLessEqual(left[3], 440 * fit)
+                self.assertLessEqual(steps[1], 440 * fit)  # so the heading is read with the steps
+
+    def test_a_word_gap_lining_up_below_the_columns_does_not_pull_the_text_into_them(self):
+        def card(d):
+            text_block(d, 60, 560, 40, 8, seed=1)
+            text_block(d, 640, 1140, 40, 8, seed=2)
+            for line in range(6):  # a full-width paragraph with a 12px gap at the same x on every line
+                y = 280 + line * PITCH
+                d.rectangle([60, y, 594, y + LINE_H], fill=0)
+                d.rectangle([606, y, 1140, y + LINE_H], fill=0)
+
+        boxes = ocr.find_regions(page(paint=card))
+        self.assertEqual(len(boxes), 3, boxes)
+        left, right, paragraph = boxes
+        self.assertLessEqual(left[3], 280)
+        self.assertGreaterEqual(paragraph[1], left[3])
+        self.assertGreater(paragraph[2] - paragraph[0], 900)
 
 
 class ExtractTextLayoutTests(unittest.TestCase):
