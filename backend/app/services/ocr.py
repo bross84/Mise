@@ -1,4 +1,5 @@
 import io
+import re
 
 import pytesseract
 from PIL import Image, ImageOps, ImageStat, UnidentifiedImageError
@@ -352,6 +353,28 @@ def _read_regions(image: Image.Image, boxes: list[Box], line_h: int) -> str:
     return "\n\n".join(texts)
 
 
+UNIT_WORDS = r"(?:tablespoons?|teaspoons?|tbsp|tsp|cups?|cloves?|pinch|slices?|cans?|pounds?|lbs?|ounces?)"
+_FOLLOWED_BY_A_WORD = r"(?=\s+[A-Za-z(])(?!\s+(?:calories|kcal|cal)\b)"
+# "oz" read as "0z" or "02" (the "o" becomes a zero), right after a quantity and before the ingredient
+_OZ_AS_0Z = re.compile(r"(?<![\d.,/])(\d{1,3})0[zZ]" + _FOLLOWED_BY_A_WORD)
+_OZ_AS_02 = re.compile(r"(?<![\d.,/])(\d{2,3})02" + _FOLLOWED_BY_A_WORD)
+_YEAR = re.compile(r"(?:19|20)02")
+# the digit 1 read as a bar or letter at the start of a line, when a unit word follows
+_ONE_AS_BAR = re.compile(r"(?m)^[|lI](?=\s+" + UNIT_WORDS + r"\b)")
+
+
+def repair_units(text: str) -> str:
+    """Fix quantity misreads seen on real recipe cards ("1202 chicken" for 12oz, "| tablespoon" for 1).
+
+    A misread like this still looks like a plausible amount, so a cook reviewing the text can't tell
+    it from a real one. Each rule is narrow (a unit-shaped misread right before an ingredient word,
+    never a year or a calorie count) because a wrong repair would be just as invisible.
+    """
+    text = _OZ_AS_0Z.sub(r"\1oz", text)
+    text = _OZ_AS_02.sub(lambda m: m.group(0) if _YEAR.fullmatch(m.group(0)) else f"{m.group(1)}oz", text)
+    return _ONE_AS_BAR.sub("1", text)
+
+
 def extract_text(data: bytes) -> str:
     """Run OCR over an uploaded image and return the text as read (blocking; call off the event loop).
 
@@ -362,7 +385,7 @@ def extract_text(data: bytes) -> str:
     try:
         image, boxes, line_h = layout_page(image)
         text = _read_regions(image, boxes, line_h) if len(boxes) > 1 else ""
-        return text or _read(image)
+        return repair_units(text or _read(image)).strip()
     except pytesseract.TesseractNotFoundError as error:
         raise OcrUnavailableError(
             "Tesseract OCR isn't installed on the server, so images can't be read. Paste the recipe text instead."
