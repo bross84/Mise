@@ -100,3 +100,144 @@ class OcrEndpointTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --- page layout: columns, photos and full-width blocks -------------------------------------
+import random
+
+from PIL import ImageDraw
+
+LINE_H, PITCH = 14, 22  # ink height and line-to-line distance, like ~16px body text
+
+
+def text_block(draw, x0, x1, y0, lines, *, ink=0, seed=0, word_gap=7):
+    """Ragged lines of word-sized blocks, so no blank column lines up from one line to the next."""
+    rng = random.Random(seed)
+    for line in range(lines):
+        x, y = x0 + rng.randint(0, 6), y0 + line * PITCH
+        while True:
+            width = rng.randint(22, 64)
+            if x + width > x1 - rng.randint(0, 40):
+                break
+            for stroke in range(x, x + width, 3):  # thin strokes: real text is ~20% ink, not solid
+                draw.line([stroke, y, stroke, y + LINE_H], fill=ink)
+            x += width + word_gap
+
+
+def heading(draw, box):
+    """Big bold lettering: strokes, not a solid slab, so it doesn't look like a photo."""
+    left, top, right, bottom = box
+    for stroke in range(left, right, 3):
+        draw.line([stroke, top, stroke, bottom], fill=0)
+
+
+def page(size=(1200, 700), paint=lambda d: None, bg=255):
+    image = Image.new("L", size, bg)
+    paint(ImageDraw.Draw(image))
+    return image
+
+
+def as_png(image):
+    buffer = io.BytesIO()
+    image.convert("RGB").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def two_columns(d):
+    text_block(d, 60, 560, 40, 12, seed=1)
+    text_block(d, 640, 1140, 40, 12, seed=2)
+
+
+def recipe_card(d):
+    """Photo left, heading across the column gap, two ingredient columns, full-width steps below."""
+    d.rectangle([40, 20, 340, 400], fill=100)            # photo
+    heading(d, (460, 20, 700, 50))                       # "INGREDIENTS" spans the column gutter
+    text_block(d, 360, 560, 80, 13, seed=3)              # left ingredient column
+    text_block(d, 600, 800, 80, 13, seed=4)              # right ingredient column
+    heading(d, (420, 430, 640, 460))                     # "INSTRUCTIONS"
+    text_block(d, 40, 1160, 480, 8, seed=5)              # numbered steps, full width
+
+
+class FindRegionsTests(unittest.TestCase):
+    def test_two_columns_are_found_left_to_right(self):
+        boxes = ocr.find_regions(page(paint=two_columns))
+        self.assertEqual(len(boxes), 2)
+        self.assertLess(boxes[0][2], 600)
+        self.assertGreater(boxes[1][0], 600)
+
+    def test_single_wide_column_is_not_split(self):
+        boxes = ocr.find_regions(page(paint=lambda d: text_block(d, 60, 1140, 40, 20, seed=7)))
+        self.assertEqual(len(boxes), 1)
+
+    def test_a_gap_no_wider_than_a_word_space_is_not_a_gutter(self):
+        def narrow(d):  # 8px between the halves on every line; a gutter is at least 11px here
+            for line in range(12):
+                y = 40 + line * PITCH
+                d.rectangle([60, y, 596, y + LINE_H], fill=0)
+                d.rectangle([604, y, 1140, y + LINE_H], fill=0)
+        self.assertEqual(len(ocr.find_regions(page(paint=narrow))), 1)
+
+    def test_a_short_block_is_not_split_into_columns(self):
+        def two_lines(d):
+            text_block(d, 60, 400, 40, 2, seed=1)
+            text_block(d, 700, 1140, 40, 2, seed=2)
+        self.assertEqual(len(ocr.find_regions(page(paint=two_lines))), 1)
+
+    def test_blank_page_is_one_region(self):
+        self.assertEqual(len(ocr.find_regions(page())), 1)
+
+    def test_recipe_card_is_cut_into_reading_order_blocks(self):
+        boxes = ocr.find_regions(page(paint=recipe_card))
+        # photo, heading, left column, right column, then heading + steps read as one block
+        self.assertEqual(len(boxes), 5)
+        photo, heading, left, right, steps = boxes
+        self.assertLess(photo[2], 360)
+        self.assertLess(heading[3], 75)
+        self.assertGreater(left[1], 70)
+        self.assertLess(left[2], 590)
+        self.assertGreater(right[0], 590)
+        self.assertGreater(steps[1], 400)
+        self.assertGreater(steps[2] - steps[0], 900)
+
+
+class ExtractTextLayoutTests(unittest.TestCase):
+    def read(self, image):
+        reads = iter(["HEADING", "LEFT", "RIGHT", "STEPS"])
+        calls = []
+
+        def fake(img, **_kwargs):
+            calls.append(img.size)
+            return next(reads)
+
+        with patch.object(pytesseract, "image_to_string", fake):
+            return ocr.extract_text(as_png(image)), calls
+
+    def test_columns_are_read_separately_and_joined_in_order(self):
+        reads = iter(["LEFT\nline", "RIGHT\nline"])
+        with patch.object(pytesseract, "image_to_string", lambda img, **_: next(reads)):
+            text = ocr.extract_text(as_png(page(paint=two_columns)))
+        self.assertEqual(text, "LEFT\nline\n\nRIGHT\nline")
+
+    def test_photo_is_not_sent_to_the_engine(self):
+        text, calls = self.read(page(paint=recipe_card))
+        self.assertEqual(len(calls), 4)  # five blocks, but the photo is never sent to the engine
+        self.assertEqual(text.split("\n\n"), ["HEADING", "LEFT", "RIGHT", "STEPS"])
+
+    def test_dark_mode_columns_are_still_split(self):
+        def dark(d):
+            text_block(d, 60, 560, 40, 12, ink=255, seed=1)
+            text_block(d, 640, 1140, 40, 12, ink=255, seed=2)
+        reads = iter(["L", "R"])
+        with patch.object(pytesseract, "image_to_string", lambda img, **_: next(reads)):
+            self.assertEqual(ocr.extract_text(as_png(page(paint=dark, bg=0))), "L\n\nR")
+
+    def test_falls_back_to_whole_image_when_every_block_reads_empty(self):
+        calls = []
+
+        def fake(img, **_kwargs):
+            calls.append(img.size)
+            return "" if len(calls) <= 2 else "WHOLE PAGE"
+
+        with patch.object(pytesseract, "image_to_string", fake):
+            text = ocr.extract_text(as_png(page(paint=two_columns)))
+        self.assertEqual(text, "WHOLE PAGE")
