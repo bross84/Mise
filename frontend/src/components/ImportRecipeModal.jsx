@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ImageUp, Upload, X } from 'lucide-react'
 import { importMarkdown, ocrImage, parseRecipe } from '../api/client.js'
 
@@ -10,16 +10,24 @@ export default function ImportRecipeModal({ onClose, onImported }) {
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
   const [reading, setReading] = useState(false)
+  const [shots, setShots] = useState([]) // object URLs of the images read so far, shown for checking
   const fileRef = useRef(null)
   const imageRef = useRef(null)
+  const shotsRef = useRef([])
+
+  useEffect(() => () => shotsRef.current.forEach((shot) => URL.revokeObjectURL(shot)), [])
 
   // Reads an image (pasted screenshot or picked photo) into the text box. The result is raw OCR
   // text, so it stays editable and goes through the same /parse cleanup as typed text on Import.
+  // OCR can misread a number into another plausible one, so the image stays on screen to check against.
   const readImage = async (file) => {
     setError('')
     setReading(true)
     try {
       const { text: read } = await ocrImage(file)
+      const shot = URL.createObjectURL(file)
+      shotsRef.current.push(shot)
+      setShots((current) => [...current, shot])
       setText((current) => (current.trim() ? `${current.trimEnd()}\n\n${read}` : read))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read the image.')
@@ -140,6 +148,21 @@ export default function ImportRecipeModal({ onClose, onImported }) {
               </button>
               <input ref={imageRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleImagePicked} />
             </div>
+            {shots.length > 0 && (
+              <div className="flex items-start gap-3 rounded border border-mise-800 bg-mise-900 p-2">
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {shots.map((shot, index) => (
+                    <a key={shot} href={shot} target="_blank" rel="noreferrer" title="Open full size">
+                      <img src={shot} alt={`Screenshot ${index + 1}`} className="max-h-24 max-w-40 rounded border border-mise-700 object-contain" />
+                    </a>
+                  ))}
+                </div>
+                <p className="text-xs text-mise-500">
+                  The text below was read from {shots.length === 1 ? 'this image' : 'these images'}. Reading can
+                  swap a number or letter, so check the amounts against it before importing.
+                </p>
+              </div>
+            )}
             <textarea
               rows={12}
               value={text}
