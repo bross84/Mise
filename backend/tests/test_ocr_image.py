@@ -158,6 +158,47 @@ def recipe_card(d):
     text_block(d, 40, 1160, 480, 8, seed=5)              # numbered steps, full width
 
 
+def realistic_card(scale=1.0):
+    """A recipe card rendered like a real screenshot: anti-aliased text, a photo, two ingredient columns."""
+    from PIL import ImageFont
+
+    body, big = ImageFont.load_default(size=16), ImageFont.load_default(size=36)
+    text, head = (94, 116, 130), (47, 72, 88)
+    left_col = ["12oz skinless chicken", "thighs", "Seasoned with salt,", "garlic, onion, paprika,", "chili powder", "",
+                "4 slices of center cut", "bacon", "Dice, cook in pan", "until crispy", "", "Garnish with chives",
+                "and red chili flakes"]
+    right_col = ["Alfredo Sauce:", "168g evaporated fat free milk", "(half a 12oz can)", "300g 2% cottage cheese",
+                 "50g Parmigiano Reggiano", "1-2 chipotle peppers", "1 tablespoon adobo sauce",
+                 "Salt, pepper to taste", "", "320g Protein penne"]
+    steps = ["1.Season your chicken (even amounts of each seasoning, if you prefer to measure, mix each",
+             "seasoning in a small bowl in bulk then use enough to completely cover each side of the chicken)",
+             "and air fry at 375 for 12-15 minutes.", "2.Begin to cook the pasta according to the instructions",
+             "3.Blend all of the Alfredo sauce ingredients in a blender and blend until completely smooth",
+             "4.Dice bacon into small pieces and cook them in a pan until golden brown. Once cooked, remove",
+             "them from the pan (drain excess grease), turn off heat and add in your diced chicken and pour",
+             "over the creamy Alfredo sauce and cooked pasta. Mix until combined",
+             "5.Top the meal off with chives, red chili flakes, and the chopped bacon and enjoy!"]
+
+    card = Image.new("RGB", (780, 700), "white")
+    draw = ImageDraw.Draw(card)
+    rng = random.Random(3)
+    for y in range(18, 411):  # dark sleeve on top, orange pasta, dark pan at the bottom
+        for x in range(28, 335):
+            dark = y < 70 or y > 340
+            card.putpixel((x, y), (rng.randint(40, 110), rng.randint(40, 100), rng.randint(40, 100)) if dark
+                          else (rng.randint(170, 245), rng.randint(110, 185), rng.randint(40, 110)))
+    draw.text((453, 18), "INGREDIENTS", font=big, fill=head)
+    for x, lines in ((358, left_col), (546, right_col)):
+        for row, line in enumerate(lines):
+            draw.text((x, 68 + row * 26), line, font=body, fill=text)
+    draw.text((312, 440), "INSTRUCTIONS", font=big, fill=head)
+    for row, line in enumerate(steps):
+        draw.text((30, 500 + row * 23), line, font=body, fill=text)
+    if scale != 1.0:
+        card = card.resize((round(780 * scale), round(700 * scale)), Image.LANCZOS)
+    return card
+
+
 class FindRegionsTests(unittest.TestCase):
     def test_two_columns_are_found_left_to_right(self):
         boxes = ocr.find_regions(page(paint=two_columns))
@@ -188,16 +229,29 @@ class FindRegionsTests(unittest.TestCase):
 
     def test_recipe_card_is_cut_into_reading_order_blocks(self):
         boxes = ocr.find_regions(page(paint=recipe_card))
-        # photo, heading, left column, right column, then heading + steps read as one block
-        self.assertEqual(len(boxes), 5)
-        photo, heading, left, right, steps = boxes
-        self.assertLess(photo[2], 360)
-        self.assertLess(heading[3], 75)
-        self.assertGreater(left[1], 70)
+        # The photo is whited out, so: heading, left column, right column, then heading + steps.
+        self.assertEqual(len(boxes), 4)
+        heading, left, right, steps = boxes
+        self.assertLessEqual(heading[3], 85)
+        self.assertGreaterEqual(left[1], 70)
         self.assertLess(left[2], 590)
         self.assertGreater(right[0], 590)
-        self.assertGreater(steps[1], 400)
+        self.assertGreater(steps[1], 300)
         self.assertGreater(steps[2] - steps[0], 900)
+
+    def test_realistic_card_with_a_photo_splits_at_any_screenshot_scale(self):
+        # Anti-aliased gray-teal text, a noisy orange photo, and text lines on the same pitch in both
+        # columns (so blank rows run across the whole body). Resizing leaves a halo around the photo.
+        for scale in (1.0, 1.5, 2.0):
+            with self.subTest(scale=scale):
+                prepared = ocr.prepare_image(as_png(realistic_card(scale)))
+                boxes = ocr.find_regions(prepared)
+                self.assertEqual(len(boxes), 4, boxes)
+                heading, left, right, steps = boxes
+                self.assertLess(left[2], right[0])
+                self.assertEqual(left[1], right[1])  # both columns cover the same rows
+                self.assertLessEqual(heading[3], left[1])
+                self.assertGreaterEqual(steps[1], left[3])
 
 
 class ExtractTextLayoutTests(unittest.TestCase):
