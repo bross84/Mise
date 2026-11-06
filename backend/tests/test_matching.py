@@ -25,7 +25,8 @@ class MatcherTests(unittest.TestCase):
         engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         Base.metadata.create_all(engine)
         self.db = sessionmaker(bind=engine)()
-        for name in ("Onions, Raw", "Onion Powder Blend", "Spices, Pepper, Black", "Tomato Paste"):
+        for name in ("Onions, Raw", "Onion Powder Blend", "Spices, Pepper, Black", "Tomato Paste",
+                     "Cheddar Cheese", "Neufchatel Cheese", "Parmesan Cheese Grated"):
             self.db.add(Ingredient(name=name, calories=1, protein=0, carbs=0, fat=0, unit="per 100g",
                                    source="local", serving_quantity=1))
         self.db.commit()
@@ -42,6 +43,18 @@ class MatcherTests(unittest.TestCase):
 
     def test_unrelated_name_does_not_match(self):
         self.assertIsNone(self.match("Dragon fruit"))
+
+    def test_generic_name_shared_by_several_ingredients_is_not_guessed(self):
+        # "cheese" fits Cheddar and Neufchatel equally well; picking one would be arbitrary.
+        self.assertIsNone(self.match("Cheese"))
+        self.assertIsNone(self.match("cheese, sliced"))
+
+    def test_specific_name_still_finds_its_ingredient_among_similar_ones(self):
+        self.assertEqual(self.match("Cheddar"), "Cheddar Cheese")
+
+    def test_fuzzy_match_is_flagged_as_fuzzy(self):
+        result = asyncio.run(IngredientMatcher().match("Onion, diced", self.db))
+        self.assertEqual(result["confidence"], "fuzzy")
 
 
 if __name__ == "__main__":
