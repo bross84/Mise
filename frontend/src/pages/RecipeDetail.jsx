@@ -66,6 +66,14 @@ const inputCls =
 // For flex rows where the field sets its own width (w-full would override it).
 const inputRowCls = inputCls.replace('w-full ', '')
 
+// Toolbar icon buttons: 44px touch targets on a phone, compact from `sm` up.
+const toolbarBtnCls =
+  'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:min-h-0 sm:min-w-0'
+
+// Cook is the main kitchen action: filled, labeled at every size, and a full-width row on a phone.
+const cookBtnCls =
+  'inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:min-h-0 sm:w-auto'
+
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api'
 
 const INGREDIENT_COLLAPSE_THRESHOLD = 10
@@ -426,12 +434,15 @@ function RecipeDetail() {
   const [scale, setScale] = useState(1)
   // What's being typed in the box; null when it isn't being edited
   const [boxDraft, setBoxDraft] = useState(null)
+  // Phone only: whether the servings & scaling panel is expanded (always shown from sm up)
+  const [showScaling, setShowScaling] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const [ingredientMap, setIngredientMap] = useState({})
   const [macros, setMacros] = useState(null)
-  const [macroView, setMacroView] = useState('total')
+  // Per serving first: that's the number you eat and plan around.
+  const [macroView, setMacroView] = useState('per-serving')
 
   const [editing, setEditing] = useState(false)
   const [showAllIngredients, setShowAllIngredients] = useState(false)
@@ -958,7 +969,8 @@ function RecipeDetail() {
       onApplied={handleAssistApplied}
     />
     <section className="mx-auto w-full max-w-5xl">
-      <div className="sticky top-16 lg:top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex items-center justify-end gap-2 overflow-x-auto whitespace-nowrap">
+      {/* On a phone the toolbar wraps (Cook on its own row) and scrolls away; from sm up it is one sticky row. */}
+      <div className="sm:sticky sm:top-16 lg:top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 py-3 bg-mise-950/95 backdrop-blur border-b border-mise-800 flex flex-wrap items-center justify-start gap-2 sm:flex-nowrap sm:justify-end sm:overflow-x-auto sm:whitespace-nowrap">
         {editing ? (
           <>
             {saveError && (
@@ -986,10 +998,10 @@ function RecipeDetail() {
             <button
               type="button"
               onClick={() => setCookMode(true)}
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className={cookBtnCls}
             >
-              <ChefHat size={14} />
-              <span className="hidden xl:inline">Cook</span>
+              <ChefHat size={16} aria-hidden="true" />
+              Cook
             </button>
             <button
               type="button"
@@ -1007,7 +1019,7 @@ function RecipeDetail() {
               }}
               aria-label={mealPlanRecipeIds.has(Number(id)) ? 'Remove from meal plan' : 'Add to meal plan'}
               title={mealPlanRecipeIds.has(Number(id)) ? 'Remove from meal plan' : 'Add to meal plan'}
-              className={`inline-flex shrink-0 items-center gap-2 rounded border px-2.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50 ${mealPlanRecipeIds.has(Number(id)) ? 'border-ember/40 text-ember hover:border-rose-700 hover:text-rose-400' : 'border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300'}`}
+              className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded border px-2.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50 sm:min-h-0 sm:min-w-0 ${mealPlanRecipeIds.has(Number(id)) ? 'border-ember/40 text-ember hover:border-rose-700 hover:text-rose-400' : 'border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300'}`}
             >
               {mealPlanRecipeIds.has(Number(id)) ? <CalendarCheck size={14} /> : <CalendarPlus size={14} />}
               <span className="hidden xl:inline">
@@ -1018,7 +1030,7 @@ function RecipeDetail() {
               type="button"
               onClick={() => setAssistOpen(true)}
               aria-label="Open recipe assistant"
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className={toolbarBtnCls}
             >
               <Sparkles size={14} />
               <span className="hidden xl:inline">Assist</span>
@@ -1027,7 +1039,7 @@ function RecipeDetail() {
               type="button"
               onClick={handleEnterEdit}
               aria-label="Edit recipe"
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className={toolbarBtnCls}
             >
               <Pencil size={14} />
               <span className="hidden xl:inline">Edit</span>
@@ -1037,25 +1049,16 @@ function RecipeDetail() {
               onClick={handleDuplicateRecipe}
               disabled={duplicating}
               aria-label="Duplicate recipe"
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember disabled:opacity-50"
+              className={`${toolbarBtnCls} disabled:opacity-50`}
             >
               <Copy size={14} />
               <span className="hidden xl:inline">{duplicating ? 'Duplicating…' : 'Duplicate'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteRecipe}
-              aria-label="Delete recipe"
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-rose-500/40 bg-transparent px-2.5 py-2 text-sm font-medium text-rose-300 transition hover:border-rose-400 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
-            >
-              <Trash2 size={14} />
-              <span className="hidden xl:inline">Delete Recipe</span>
             </button>
             <a
               href={`${API_BASE_URL}/recipes/${encodeURIComponent(id)}/export`}
               download
               aria-label="Export recipe as markdown"
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className={toolbarBtnCls}
             >
               <Download size={14} />
               <span className="hidden xl:inline">Export</span>
@@ -1065,7 +1068,7 @@ function RecipeDetail() {
               onClick={handleShareRecipeLink}
               title="Copy MacroFactor import link"
               aria-label="Copy MacroFactor import link"
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-mise-800 bg-mise-950/80 px-2.5 py-2 text-sm font-medium text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              className={`${toolbarBtnCls} bg-mise-950/80`}
             >
               <Share2 size={14} />
               <span className="hidden xl:inline">Share to MacroFactor</span>
@@ -1229,7 +1232,7 @@ function RecipeDetail() {
                           type="button"
                           onClick={() => setMacroView(value)}
                           className={[
-                            'px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember first:rounded-l last:rounded-r',
+                            'min-h-11 px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember first:rounded-l last:rounded-r sm:min-h-0',
                             macroView === value ? 'bg-mise-800 text-mise-300' : 'text-mise-500 hover:text-mise-300',
                           ].join(' ')}
                         >
@@ -1242,10 +1245,26 @@ function RecipeDetail() {
               )}
 
               <div className="mt-6 rounded border border-theme bg-mise-900 px-4 py-3">
+                {/* On a phone this panel starts collapsed so the ingredients are on the first screen. */}
+                <button
+                  type="button"
+                  onClick={() => setShowScaling((v) => !v)}
+                  aria-expanded={showScaling}
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded text-left text-sm text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:hidden"
+                >
+                  <span>
+                    Servings &amp; scaling
+                    <span className="ml-2 text-mise-500">
+                      {inScaleMode ? `×${formatDecimal(scale)}` : `${formatDecimal(servings)} servings`}
+                    </span>
+                  </span>
+                  {showScaling ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+                </button>
+                <div className={`${showScaling ? 'mt-2' : 'hidden'} sm:mt-0 sm:block`}>
                 <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                   <div className="flex items-center gap-4" role="radiogroup" aria-label="Serving mode">
                     {[
-                      { value: 'per-serving', label: 'Per Serving' },
+                      { value: 'per-serving', label: 'Portions' },
                       { value: 'scale', label: 'Scale Recipe' },
                     ].map(({ value, label }) => (
                       <button
@@ -1254,7 +1273,7 @@ function RecipeDetail() {
                         role="radio"
                         aria-checked={mode === value}
                         onClick={() => handleModeChange(value)}
-                        className="flex items-center gap-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                        className="flex min-h-11 items-center gap-1.5 whitespace-nowrap text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:min-h-0"
                       >
                         <span
                           className={[
@@ -1277,7 +1296,7 @@ function RecipeDetail() {
                       type="button"
                       onClick={() => stepBox(-1)}
                       disabled={boxValue <= 1}
-                      className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white disabled:opacity-40 disabled:hover:border-mise-800 disabled:hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      className="h-11 w-11 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white disabled:opacity-40 disabled:hover:border-mise-800 disabled:hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:h-7 sm:w-7"
                       aria-label={inScaleMode ? 'Decrease scaling' : 'Decrease servings'}
                     >
                       −
@@ -1292,12 +1311,12 @@ function RecipeDetail() {
                       onFocus={(e) => e.target.select()}
                       onBlur={() => setBoxDraft(null)}
                       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                      className="h-7 w-14 rounded border border-mise-800 bg-mise-950 text-center text-sm font-semibold text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember aria-[invalid=true]:border-rose-500/60"
+                      className="h-11 w-14 rounded border border-mise-800 bg-mise-950 text-center sm:h-7 text-sm font-semibold text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember aria-[invalid=true]:border-rose-500/60"
                     />
                     <button
                       type="button"
                       onClick={() => stepBox(1)}
-                      className="h-7 w-7 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                      className="h-11 w-11 rounded border border-mise-800 text-base text-mise-300 transition hover:border-mise-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:h-7 sm:w-7"
                       aria-label={inScaleMode ? 'Increase scaling' : 'Increase servings'}
                     >
                       +
@@ -1333,10 +1352,13 @@ function RecipeDetail() {
                     : 'Splits the recipe into more or fewer portions. Ingredient amounts don’t change, only the per-serving macros.'}
                   {!inScaleMode && !servingsAreWhole && ' Fractional servings are for viewing only; saving needs a whole number.'}
                 </p>
+                </div>
               </div>
             </div>
 
-            <div className="mt-6 md:mt-0">
+            {/* With no image there's nothing to show (and no hover to reveal the upload buttons on a phone),
+                so don't spend a screen of space on an empty box below md. */}
+            <div className={`mt-6 md:mt-0 ${resolveUploadUrl(recipe.image_url) ? '' : 'hidden md:block'}`}>
               <RecipeHeroImage
                 recipeId={recipe.id}
                 imageUrl={recipe.image_url}
@@ -1620,12 +1642,6 @@ function RecipeDetail() {
         </div>
       ) : (
         <>
-          {recipe.notes && (
-            <section className="mt-6 rounded border border-theme bg-mise-900 p-4">
-              <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Notes</h2>
-              <div className="mt-3 text-sm"><MarkdownText text={recipe.notes} /></div>
-            </section>
-          )}
           <div className="mt-6 flex flex-col gap-6">
             <section className="rounded border border-theme bg-mise-900 p-4">
               <div className="flex items-baseline justify-between gap-2">
@@ -1730,6 +1746,14 @@ function RecipeDetail() {
                 <p className="mt-4 text-sm text-mise-600">No instructions yet — use Edit to add them.</p>
               </section>
             )}
+
+            {/* Notes come after the ingredients and method: they're reference, not what you need to start cooking. */}
+            {recipe.notes && (
+              <section className="rounded border border-theme bg-mise-900 p-4">
+                <h2 className="text-xs font-medium uppercase tracking-widest text-mise-500">Notes</h2>
+                <div className="mt-3 text-sm"><MarkdownText text={recipe.notes} /></div>
+              </section>
+            )}
           </div>
 
           {similarRecipes.length > 0 && (
@@ -1764,6 +1788,18 @@ function RecipeDetail() {
               </div>
             </section>
           )}
+
+          {/* Destructive action lives on its own at the end of the page, away from the everyday toolbar. */}
+          <div className="mt-10 border-t border-theme pt-6">
+            <button
+              type="button"
+              onClick={handleDeleteRecipe}
+              className="inline-flex min-h-11 items-center gap-2 rounded border border-rose-500/40 bg-transparent px-4 py-2 text-sm font-medium text-rose-700 transition hover:border-rose-400 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 dark:text-rose-300 dark:hover:text-rose-200"
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              Delete recipe
+            </button>
+          </div>
         </>
       )}
     </section>
