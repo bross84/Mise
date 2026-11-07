@@ -72,8 +72,9 @@ function parseAmount(str) {
 
 // ─── MatchedIngredientList ────────────────────────────────────────────────────
 
-function MatchedIngredientList({ matchResults, onRerun, onRename }) {
+function MatchedIngredientList({ matchResults, onRerun, onRename, onConfirm }) {
   const [openSearch, setOpenSearch] = useState(null)
+  const [openChange, setOpenChange] = useState(null)
   const [acceptedIndexes, setAcceptedIndexes] = useState([])
   const [skippedIndexes, setSkippedIndexes] = useState([])
 
@@ -93,7 +94,12 @@ function MatchedIngredientList({ matchResults, onRerun, onRename }) {
     .filter((entry) => !acceptedIndexes.includes(entry.index))
     .filter((entry) => !skippedIndexes.includes(entry.index))
 
-  if (unmatchedResults.length === 0) return null
+  // Fuzzy matches are guesses saved without asking; list them so a wrong one can be changed.
+  const guessedResults = matchResults
+    .map((result, index) => ({ result, index }))
+    .filter((entry) => entry.result.match?.confidence === 'fuzzy')
+
+  if (unmatchedResults.length === 0 && guessedResults.length === 0) return null
 
   // Build display items with group name headers
   const displayItems = []
@@ -117,6 +123,54 @@ function MatchedIngredientList({ matchResults, onRerun, onRename }) {
           Re-run matching
         </button>
       </div>
+      {guessedResults.length > 0 && (
+        <>
+          <p className="mb-2 text-xs text-mise-500">
+            These were matched by name, not exactly. Check each one, or change it.
+          </p>
+          <ul className="mb-4 space-y-2">
+            {guessedResults.map(({ result: r, index: i }) => {
+              const isOpen = openChange === i
+              return (
+                <li key={i}>
+                  <div className="flex items-center gap-3 rounded border border-theme bg-mise-950/50 px-3 py-2">
+                    <span className="text-sm">🟡</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-mise-300">{toTitleCase(r.name)}</p>
+                      <p className="truncate text-[11px] text-mise-500">Matched to {toTitleCase(r.match.name)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOpenChange(isOpen ? null : i)}
+                      className="shrink-0 rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                    >
+                      {isOpen ? 'Cancel' : 'Change'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onConfirm(i)}
+                      className="shrink-0 rounded border border-mise-700 bg-mise-800/60 px-2.5 py-1 text-xs text-mise-300 transition hover:border-mise-600 hover:bg-mise-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                    >
+                      Looks right
+                    </button>
+                  </div>
+                  {isOpen && (
+                    <IngredientSearchPanel
+                      ingredientName={r.name}
+                      onClose={() => setOpenChange(null)}
+                      onSelect={async (saved) => {
+                        const matched = await onRerun(i, saved)
+                        if (matched) setOpenChange(null)
+                        return matched
+                      }}
+                    />
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
       <ul className="space-y-2">
         {displayItems.map((item) => {
           if (item.type === 'group') {
@@ -656,6 +710,14 @@ export default function AddRecipe() {
           />
           <MatchedIngredientList
             matchResults={matchResults}
+            onConfirm={(index) =>
+              setMatchResults((prev) => {
+                if (!prev?.[index]?.match) return prev
+                const next = [...prev]
+                next[index] = { ...next[index], match: { ...next[index].match, confidence: 'confirmed' } }
+                return next
+              })
+            }
             onRename={(index, newName) => {
               setParsedIngredients((prev) => {
                 if (!prev[index]) return prev
@@ -681,7 +743,7 @@ export default function AddRecipe() {
                   const next = [...prev]
                   next[resultIndex] = {
                     ...next[resultIndex],
-                    match: { ingredient_id: savedIngredient.id, name: savedIngredient.name, confidence: 100, score: 100 },
+                    match: { ingredient_id: savedIngredient.id, name: savedIngredient.name, confidence: 'manual', score: 100 },
                   }
                   return next
                 })

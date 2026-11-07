@@ -81,19 +81,23 @@ class IngredientMatcher:
 
         # 2. Fuzzy match with word-overlap gate
         # Ties go to the candidate with the fewest extra words ("Onions, Raw" over "Onion Powder Blend").
-        best_score = 0.0
-        best_ing = None
-        best_extra = 0
+        scored = []
         for ing in all_ingredients:
             cand_norm = _normalize(ing.name)
             score = _match_score(name_norm, cand_norm)
-            extra = len(cand_norm.split())
-            if score > best_score or (score == best_score and score > 0 and extra < best_extra):
-                best_score = score
-                best_ing = ing
-                best_extra = extra
+            if score >= FUZZY_THRESHOLD:
+                scored.append((score, -len(cand_norm.split()), cand_norm, ing))
 
-        if best_score >= FUZZY_THRESHOLD and best_ing is not None:
-            return {"ingredient_id": best_ing.id, "name": best_ing.name, "confidence": "fuzzy", "score": round(best_score)}
+        if not scored:
+            return None
 
-        return None
+        best_score, best_rank, _, best_ing = max(scored, key=lambda s: (s[0], s[1]))
+
+        # Several different ingredients fit equally well ("cheese" fits Cheddar and Neufchatel
+        # alike), so any pick would be arbitrary. Leave it unmatched and let the user choose.
+        # Rows that only differ by id (same name) are the same ingredient, not a tie.
+        tied_names = {norm for score, rank, norm, _ in scored if (score, rank) == (best_score, best_rank)}
+        if len(tied_names) > 1:
+            return None
+
+        return {"ingredient_id": best_ing.id, "name": best_ing.name, "confidence": "fuzzy", "score": round(best_score)}
