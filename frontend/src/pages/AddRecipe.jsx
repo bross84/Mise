@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { CircleAlert, CircleHelp } from 'lucide-react'
 import { createRecipe, getCookbooks, getIngredients, matchIngredients, parseIngredients } from '../api/client.js'
 import { MarkdownField } from '../components/MarkdownText.jsx'
 import IngredientSearchPanel from '../components/IngredientSearchPanel.jsx'
@@ -14,6 +15,35 @@ const primaryBtnCls =
 
 const secondaryBtnCls =
   'rounded border border-mise-800 px-3 py-2 text-sm font-medium text-mise-300 transition hover:border-mise-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember'
+
+// Review-row controls. On a phone they grow to a 44px touch target; from `sm` up they shrink back to a compact row.
+const rowBtnBase =
+  'inline-flex min-h-11 items-center justify-center rounded border px-3 py-1 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:min-h-0 sm:px-2.5'
+
+// Quiet: dismissing or secondary actions (Change, Skip, Cancel, bulk toggles).
+const rowBtnQuietCls = `${rowBtnBase} border-mise-800 text-mise-400 hover:border-mise-700 hover:text-mise-300`
+
+// Strong: the action that resolves the row (Looks right, Search & Add).
+const rowBtnStrongCls = `${rowBtnBase} border-mise-700 bg-mise-800/60 text-mise-300 hover:border-mise-600 hover:bg-mise-800`
+
+const reviewRowCls =
+  'flex flex-col gap-2 rounded border bg-mise-950/50 px-3 py-2 sm:flex-row sm:items-center sm:gap-3'
+
+const STATUS_BADGES = {
+  guessed: { label: 'Guessed', Icon: CircleAlert, cls: 'text-amber-700 dark:text-amber-400' },
+  none: { label: 'No match', Icon: CircleHelp, cls: 'text-rose-700 dark:text-rose-400' },
+}
+
+// Match status as icon + text, so it never depends on colour or on how an emoji renders.
+function StatusBadge({ kind }) {
+  const { label, Icon, cls } = STATUS_BADGES[kind]
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${cls}`}>
+      <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+      {label}
+    </span>
+  )
+}
 
 // ─── caret coordinate helper ────────────────────────────────────────────────
 
@@ -101,15 +131,15 @@ function MatchedIngredientList({ matchResults, onRerun, onRename, onConfirm }) {
 
   if (unmatchedResults.length === 0 && guessedResults.length === 0) return null
 
-  // Build display items with group name headers
+  // Build display items with group name headers. When ingredients drop back out of a group
+  // they get an "Ungrouped" header so they don't read as part of the group above them.
   const displayItems = []
-  let lastGroup = undefined
+  let lastGroup = null
   unmatchedResults.forEach(({ result: r, index: i }) => {
-    if (r.group_name !== lastGroup) {
-      lastGroup = r.group_name
-      if (r.group_name) {
-        displayItems.push({ type: 'group', key: `group-${r.group_name}-${i}`, name: r.group_name })
-      }
+    const group = r.group_name || null
+    if (group !== lastGroup) {
+      displayItems.push({ type: 'group', key: `group-${group ?? 'none'}-${i}`, name: group ?? 'Ungrouped' })
+      lastGroup = group
     }
     displayItems.push({ type: 'ingredient', key: i, result: r, index: i })
   })
@@ -118,8 +148,7 @@ function MatchedIngredientList({ matchResults, onRerun, onRename, onConfirm }) {
     <div className="mt-4 rounded border border-theme bg-mise-900 p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-xs font-medium uppercase tracking-widest text-mise-500">Ingredient Matches</h3>
-        <button type="button" onClick={onRerun}
-          className="rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300">
+        <button type="button" onClick={onRerun} className={rowBtnQuietCls}>
           Re-run matching
         </button>
       </div>
@@ -133,26 +162,26 @@ function MatchedIngredientList({ matchResults, onRerun, onRename, onConfirm }) {
               const isOpen = openChange === i
               return (
                 <li key={i}>
-                  <div className="flex items-center gap-3 rounded border border-theme bg-mise-950/50 px-3 py-2">
-                    <span className="text-sm">🟡</span>
+                  <div className={`${reviewRowCls} border-theme`}>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-mise-300">{toTitleCase(r.name)}</p>
-                      <p className="truncate text-[11px] text-mise-500">Matched to {toTitleCase(r.match.name)}</p>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <p className="break-words text-sm text-mise-300">{toTitleCase(r.name)}</p>
+                        <StatusBadge kind="guessed" />
+                      </div>
+                      <p className="mt-0.5 break-words text-xs text-mise-500">Matched to {toTitleCase(r.match.name)}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setOpenChange(isOpen ? null : i)}
-                      className="shrink-0 rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                    >
-                      {isOpen ? 'Cancel' : 'Change'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onConfirm(i)}
-                      className="shrink-0 rounded border border-mise-700 bg-mise-800/60 px-2.5 py-1 text-xs text-mise-300 transition hover:border-mise-600 hover:bg-mise-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                    >
-                      Looks right
-                    </button>
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setOpenChange(isOpen ? null : i)}
+                        className={rowBtnQuietCls}
+                      >
+                        {isOpen ? 'Cancel' : 'Change'}
+                      </button>
+                      <button type="button" onClick={() => onConfirm(i)} className={rowBtnStrongCls}>
+                        Looks right
+                      </button>
+                    </div>
                   </div>
                   {isOpen && (
                     <IngredientSearchPanel
@@ -175,7 +204,7 @@ function MatchedIngredientList({ matchResults, onRerun, onRename, onConfirm }) {
         {displayItems.map((item) => {
           if (item.type === 'group') {
             return (
-              <li key={item.key} className="pt-1 text-[10px] font-semibold uppercase tracking-widest text-mise-600">
+              <li key={item.key} className="pt-1 text-[11px] font-semibold uppercase tracking-widest text-mise-400">
                 {item.name}
               </li>
             )
@@ -184,29 +213,33 @@ function MatchedIngredientList({ matchResults, onRerun, onRename, onConfirm }) {
           const isOpen = openSearch === i
           return (
             <li key={item.key}>
-              <div className="flex items-center gap-3 rounded border border-theme bg-mise-950/50 px-3 py-2">
-                <span className="text-sm">🔴</span>
-                <input
-                  type="text"
-                  value={r.name}
-                  onChange={(e) => onRename(i, e.target.value)}
-                  aria-label={`Rename ingredient ${toTitleCase(r.name)}`}
-                  className="flex-1 rounded border border-transparent bg-transparent px-1.5 py-1 text-sm text-mise-300 transition hover:border-mise-800 focus:border-mise-700 focus:bg-mise-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                />
-                <button
-                  type="button"
-                  onClick={() => setOpenSearch(isOpen ? null : i)}
-                  className="rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300"
-                >
-                  {isOpen ? 'Cancel' : 'Search & Add'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSkippedIndexes((prev) => prev.includes(i) ? prev : [...prev, i])}
-                  className="rounded border border-mise-700 bg-mise-800/60 px-2.5 py-1 text-xs text-mise-300 transition hover:border-mise-600 hover:bg-mise-800"
-                >
-                  Skip
-                </button>
+              <div className={`${reviewRowCls} border-theme`}>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <input
+                    type="text"
+                    value={r.name}
+                    onChange={(e) => onRename(i, e.target.value)}
+                    aria-label={`Rename ingredient ${toTitleCase(r.name)}`}
+                    className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1.5 py-1 text-sm text-mise-300 transition hover:border-mise-800 focus:border-mise-700 focus:bg-mise-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+                  />
+                  <StatusBadge kind="none" />
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setOpenSearch(isOpen ? null : i)}
+                    className={isOpen ? rowBtnQuietCls : rowBtnStrongCls}
+                  >
+                    {isOpen ? 'Cancel' : 'Search & Add'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSkippedIndexes((prev) => prev.includes(i) ? prev : [...prev, i])}
+                    className={rowBtnQuietCls}
+                  >
+                    Skip
+                  </button>
+                </div>
               </div>
               {isOpen && (
                 <IngredientSearchPanel
@@ -253,7 +286,7 @@ function ConvertedIngredientList({ parsed, onKeepOriginal }) {
         <button
           type="button"
           onClick={() => onKeepOriginal(rows.map(({ index }) => index), !allKept)}
-          className="shrink-0 rounded border border-mise-800 px-2.5 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+          className={`shrink-0 ${rowBtnQuietCls}`}
         >
           {allKept ? 'Convert all to grams' : 'Keep all original'}
         </button>
@@ -270,39 +303,41 @@ function ConvertedIngredientList({ parsed, onKeepOriginal }) {
           return (
             <li
               key={index}
-              className={`flex items-center gap-3 rounded border bg-mise-950/50 px-3 py-2 ${isEstimate ? 'border-ember/60' : 'border-theme'}`}
+              className={`${reviewRowCls} ${isEstimate ? 'border-ember/60' : 'border-theme'}`}
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-mise-300">{p.name}</p>
-                <p className="text-[11px] text-mise-500">
+                <p className="break-words text-sm text-mise-300">{p.name}</p>
+                <p className="mt-0.5 text-xs text-mise-500">
                   {p.kept_original
                     ? `Keeping original: ${originalText || 'no amount'}`
                     : `${originalText ? `${originalText} → ` : ''}${SOURCE_LABELS[p.grams_source]}${p.grams_note ? ` · ${p.grams_note}` : ''}`}
                 </p>
               </div>
-              {p.kept_original ? (
-                <span className="shrink-0 text-sm text-mise-400">{originalText || '—'}</span>
-              ) : (
-                <>
-                  <label className="sr-only" htmlFor={`converted-grams-${index}`}>Grams for {p.name}</label>
-                  <input
-                    id={`converted-grams-${index}`}
-                    type="text"
-                    inputMode="decimal"
-                    value={p.amount ?? ''}
-                    onChange={(e) => onKeepOriginal([index], false, e.target.value)}
-                    className="w-20 shrink-0 rounded border border-mise-800 bg-mise-950 px-2 py-1 text-right text-sm text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                  />
-                  <span className="shrink-0 text-xs text-mise-500">g</span>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={() => onKeepOriginal([index], !p.kept_original)}
-                className="shrink-0 rounded border border-mise-800 px-2 py-1 text-xs text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                {p.kept_original ? 'Use grams' : 'Keep original'}
-              </button>
+              <div className="flex items-center gap-2 sm:shrink-0 sm:gap-3">
+                {p.kept_original ? (
+                  <span className="shrink-0 text-sm text-mise-400">{originalText || '—'}</span>
+                ) : (
+                  <>
+                    <label className="sr-only" htmlFor={`converted-grams-${index}`}>Grams for {p.name}</label>
+                    <input
+                      id={`converted-grams-${index}`}
+                      type="text"
+                      inputMode="decimal"
+                      value={p.amount ?? ''}
+                      onChange={(e) => onKeepOriginal([index], false, e.target.value)}
+                      className="min-h-11 w-20 shrink-0 rounded border border-mise-800 bg-mise-950 px-2 py-1 text-right text-sm text-mise-300 focus:border-mise-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ember sm:min-h-0"
+                    />
+                    <span className="shrink-0 text-xs text-mise-500">g</span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onKeepOriginal([index], !p.kept_original)}
+                  className={`ml-auto shrink-0 sm:ml-0 ${rowBtnQuietCls}`}
+                >
+                  {p.kept_original ? 'Use grams' : 'Keep original'}
+                </button>
+              </div>
             </li>
           )
         })}
@@ -356,6 +391,21 @@ export default function AddRecipe() {
   const [mentionCoords, setMentionCoords] = useState({ top: 0, left: 0 })
   const [ingredientOverrides, setIngredientOverrides] = useState({})
   const ingredientsRef = useRef(null)
+  const reviewRef = useRef(null)
+  const scrolledToReviewRef = useRef(false)
+
+  // The review panels render below the whole input form; bring them into view once parsing moves us there.
+  // Wait for matching to finish: while it runs the page is too short to scroll the panel to the top.
+  useEffect(() => {
+    if (stage !== 'review') {
+      scrolledToReviewRef.current = false
+      return
+    }
+    if (matching || scrolledToReviewRef.current) return
+    scrolledToReviewRef.current = true
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    reviewRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+  }, [stage, matching])
 
   useEffect(() => {
     getCookbooks().then((d) => setCookbooks(Array.isArray(d) ? d : [])).catch(() => {})
@@ -690,8 +740,8 @@ export default function AddRecipe() {
 
       {/* Review stage: ingredient match panel */}
       {stage === 'review' && (
-        <>
-          {matching && <p className="mt-4 text-xs text-mise-500">Matching ingredients…</p>}
+        <div ref={reviewRef} className="scroll-mt-24">
+          {matching &&<p className="mt-4 text-xs text-mise-500">Matching ingredients…</p>}
           <ConvertedIngredientList
             parsed={parsedIngredients}
             onKeepOriginal={(indexes, keep, editedGrams) =>
@@ -769,7 +819,7 @@ export default function AddRecipe() {
               return false
             }}
           />
-        </>
+        </div>
       )}
 
       {/* Action buttons */}
