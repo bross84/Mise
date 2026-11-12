@@ -125,7 +125,7 @@ export default function MealPlan() {
           Loading…
         </div>
       ) : loadError ? (
-        <div className="mt-8 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="mt-8 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
           Couldn’t load your meal plan. Reload the page to try again.
         </div>
       ) : items.length === 0 ? (

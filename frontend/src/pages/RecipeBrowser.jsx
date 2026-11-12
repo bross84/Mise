@@ -752,9 +752,9 @@ function RecipeBrowser() {
           Loading recipes...
         </div>
       ) : error ? (
-        <div className="mt-8 border border-rose-500/30 bg-rose-500/10 p-8 text-center text-rose-200">
+        <div className="mt-8 border border-rose-500/30 bg-rose-500/10 p-8 text-center text-rose-700 dark:text-rose-200">
           <p className="font-medium">Unable to load recipes.</p>
-          <p className="mt-2 text-sm text-rose-200/80">{error}</p>
+          <p className="mt-2 text-sm text-rose-700/90 dark:text-rose-200/80">{error}</p>
         </div>
       ) : recipes.length === 0 ? (
         <div className="mt-8 border border-dashed border-mise-800 bg-mise-900/50 p-8 text-center text-mise-500">

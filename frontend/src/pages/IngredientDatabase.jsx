@@ -318,7 +318,7 @@ function IngredientDatabase() {
       )}
 
       {loadError && (
-        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
           {loadError}
         </div>
       )}
