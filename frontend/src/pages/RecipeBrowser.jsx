@@ -375,7 +375,7 @@ function RecipeBrowser() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const [sortBy, setSortBy] = useState('updated')
+  const [sortBy, setSortBy] = useState('created')
   const [view, setView] = useState(() => localStorage.getItem(VIEW_KEY) ?? 'large')
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
