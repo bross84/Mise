@@ -91,10 +91,8 @@ export default function ImportRecipeModal({ onClose, onImported }) {
     }`
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
+    // No close-on-backdrop-click: a stray click would throw away pasted text and read screenshots.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex w-full max-w-xl flex-col gap-4 rounded border border-mise-700 bg-mise-950 p-5 shadow-2xl">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-mise-300">Import Recipe</h2>
