@@ -1261,7 +1261,9 @@ function RecipeDetail() {
                   {showScaling ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
                 </button>
                 <div className={`${showScaling ? 'mt-2' : 'hidden'} sm:mt-0 sm:block`}>
-                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                {/* This card shares a row with the hero image, so on a mid-width screen the mode picker and the
+                    stepper don't fit side by side: let them wrap instead of spilling out of the card. */}
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
                   <div className="flex items-center gap-4" role="radiogroup" aria-label="Serving mode">
                     {[
                       { value: 'per-serving', label: 'Portions' },
@@ -1291,7 +1293,7 @@ function RecipeDetail() {
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-2 border-t border-theme pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                  <div className="flex items-center gap-2 border-t border-theme pt-3 sm:border-t-0 sm:pt-0">
                     <button
                       type="button"
                       onClick={() => stepBox(-1)}
@@ -1321,7 +1323,7 @@ function RecipeDetail() {
                     >
                       +
                     </button>
-                    <p className="text-xs text-mise-500">{inScaleMode ? 'scaling' : 'servings'}</p>
+                    <p className="whitespace-nowrap text-xs text-mise-500">{inScaleMode ? 'scaling' : 'servings'}</p>
                   </div>
 
                   {(inScaleMode ? scaleChangesRecipe : servings !== recipe.servings && servingsAreWhole) && (

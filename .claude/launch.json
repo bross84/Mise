@@ -6,6 +6,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "mise-frontend-5174",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
+    },
+    {
+      "name": "mise-backend",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--app-dir", "backend", "--port", "8001"],
+      "port": 8001
     }
   ]
 }
