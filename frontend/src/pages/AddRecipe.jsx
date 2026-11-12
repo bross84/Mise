@@ -571,7 +571,9 @@ export default function AddRecipe() {
           <p className="mt-2 text-sm text-mise-500">
             {stage === 'input'
               ? prefill
-                ? 'Fields pre-filled from import — review and edit before parsing ingredients.'
+                ? prefill.title
+                  ? 'Fields pre-filled from import — review and edit before parsing ingredients.'
+                  : 'Fields pre-filled from import. No recipe name was found, so add one below before saving.'
                 : 'Fill in the recipe details, then parse your ingredient list.'
               : 'Fix any unmatched ingredients below, then save.'}
           </p>
@@ -590,7 +592,7 @@ export default function AddRecipe() {
       {showImport && <ImportRecipeModal onClose={() => setShowImport(false)} onImported={handleImported} />}
 
       {(parseError || saveError) && (
-        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
           {parseError || saveError}
         </div>
       )}

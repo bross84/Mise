@@ -476,7 +476,7 @@ class MacrosResponse(BaseModel):
 IMPORT_MARKDOWN_SYSTEM_PROMPT = """You are a recipe data extractor. Given a markdown recipe document, extract the following and return ONLY a JSON object with these exact keys:
 
 {
-  "title": "string — the recipe name (required)",
+  "title": "string — the recipe name; use an empty string if the document does not give one (never invent a name)",
   "servings": integer — number of servings (default 1 if not specified),
   "ingredients_text": "string — all ingredient lines, one per line, preserving any section/group headers exactly as written (e.g. '## Sauce', '**For the marinade:**')",
   "instructions": "string — the full instructions section as markdown, do not summarize, rewrite, or shorten",
@@ -485,7 +485,7 @@ IMPORT_MARKDOWN_SYSTEM_PROMPT = """You are a recipe data extractor. Given a mark
   "source_url": "string or null — source URL if present, otherwise null"
 }
 
-If you cannot identify BOTH a clear recipe title AND at least one ingredient line in the document, return instead:
+A missing title is not an error. If you cannot identify at least one ingredient line in the document, return instead:
 {"error": "brief explanation of what is missing or why this does not appear to be a recipe"}
 
 Return ONLY valid JSON. No explanation, no markdown, no code fences."""
@@ -529,12 +529,13 @@ async def import_markdown(payload: ImportMarkdownRequest):
     if "error" in data:
         raise HTTPException(status_code=422, detail=str(data["error"]))
 
-    missing = [k for k in ("title", "ingredients_text") if not str(data.get(k, "")).strip()]
-    if missing:
-        raise HTTPException(status_code=422, detail=f"Could not extract required fields: {', '.join(missing)}")
+    # The title is optional here: pasted text and copied cards often have none, and the Add Recipe
+    # form already asks for a name before saving. Ingredients are what make this a recipe.
+    if not str(data.get("ingredients_text", "")).strip():
+        raise HTTPException(status_code=422, detail="Could not extract required fields: ingredients_text")
 
     return ImportMarkdownResponse(
-        title=str(data.get("title", "")).strip(),
+        title=str(data.get("title") or "").strip(),
         servings=int(data.get("servings") or 1),
         ingredients_text=str(data.get("ingredients_text", "")).strip(),
         instructions=str(data.get("instructions", "")).strip(),

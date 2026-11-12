@@ -89,7 +89,7 @@ export default function PdfLibrary() {
       </div>
 
       <p className="mt-3 text-xs text-mise-600">PDFs stay in Mise. Maximum 50 MB per file.</p>
-      {error && <p className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
+      {error && <p className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-200">{error}</p>}
 
       {loaded && documents.length === 0 && !error && (
         <div className="mt-8 rounded border border-dashed border-mise-700 bg-mise-900/30 p-8 text-center">

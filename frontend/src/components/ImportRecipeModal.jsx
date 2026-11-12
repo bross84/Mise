@@ -199,7 +199,7 @@ export default function ImportRecipeModal({ onClose, onImported }) {
         {reading && <p className="text-xs text-mise-500">Reading image…</p>}
 
         {error && (
-          <p className="rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>
+          <p className="rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">{error}</p>
         )}
 
         <div className="flex justify-end gap-2">
