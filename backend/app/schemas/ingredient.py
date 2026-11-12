@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Literal, Optional
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, field_validator
 
-from app.services import nutrition
+from app.services import nutrition, walmart
 
 # What the four macro numbers in a create/update request are for. The server always stores
 # per 100 g; "per_serving" values are converted using `serving_grams`.
@@ -33,6 +33,12 @@ class IngredientBase(BaseModel):
     barcode: Optional[str] = None
     serving_grams: Optional[float] = None
     serving_quantity: Optional[int] = 1
+    walmart_item_id: Optional[str] = None
+
+    @field_validator("walmart_item_id", mode="before")
+    @classmethod
+    def _walmart_item_id(cls, value):
+        return walmart.parse_item_id(value)
 
 
 class IngredientCreate(IngredientBase):
@@ -51,8 +57,14 @@ class IngredientUpdate(BaseModel):
     barcode: Optional[str] = None
     serving_grams: Optional[float] = None
     serving_quantity: Optional[int] = None
+    walmart_item_id: Optional[str] = None
     nutrition_basis: Optional[NutritionBasis] = None
     override_calorie_check: bool = False
+
+    @field_validator("walmart_item_id", mode="before")
+    @classmethod
+    def _walmart_item_id(cls, value):
+        return walmart.parse_item_id(value)
 
 
 class IngredientResponse(IngredientBase):

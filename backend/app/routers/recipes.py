@@ -16,7 +16,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -1326,6 +1326,21 @@ class ShoppingListRequest(BaseModel):
     recipe_ids: list[int]
 
 
+class ShoppingListItem(BaseModel):
+    name: str
+    # Formatted quantity, e.g. "4 slices"; empty when the recipe gave none.
+    amount: str = ""
+    # The library ingredient this line came from. None for recipe lines that never matched
+    # one; those can't be linked to a Walmart product.
+    ingredient_id: Optional[int] = None
+    walmart_item_id: Optional[str] = None
+
+    @computed_field
+    @property
+    def line(self) -> str:
+        return f"{self.name} - {self.amount}" if self.amount else self.name
+
+
 def _fmt_amount(value: float) -> str:
     rounded = round(value, 2)
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
@@ -1363,14 +1378,13 @@ async def suggest_tags(payload: SuggestTagsRequest):
     return SuggestTagsResponse(tags=[])
 
 
-@router.post("/shopping-list", response_class=PlainTextResponse)
-def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(get_db)):
-    if not payload.recipe_ids:
-        return PlainTextResponse("")
+def _build_shopping_list(recipe_ids: list[int], db: Session) -> list[ShoppingListItem]:
+    if not recipe_ids:
+        return []
 
-    db_recipes = db.query(Recipe).filter(Recipe.id.in_(payload.recipe_ids)).all()
+    db_recipes = db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
 
-    # ingredient_id → {name, total_grams, dominant_unit, dominant_grams, is_count, count_total}
+    # ingredient_id → {name, walmart_item_id, total_grams, dominant_unit, dominant_grams, is_count, count_total}
     merged: dict[int, dict] = {}
     unmatched: list[tuple[str, float, str]] = []
 
@@ -1395,6 +1409,7 @@ def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(g
             if ing_id not in merged:
                 merged[ing_id] = {
                     "name": display_name,
+                    "walmart_item_id": db_ing.walmart_item_id if db_ing else None,
                     "total_grams": grams,
                     "dominant_unit": unit_raw,
                     "dominant_grams": grams if grams is not None else 0.0,
@@ -1414,14 +1429,14 @@ def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(g
                 else:
                     entry["count_total"] += amount
 
-    lines: list[str] = []
+    items: list[ShoppingListItem] = []
 
-    for entry in merged.values():
+    for ing_id, entry in merged.items():
         name = entry["name"]
         if entry["is_count"]:
             total = entry["count_total"]
             unit = entry["dominant_unit"]
-            lines.append(f"{name} - {_fmt_amount(total)}{' ' + unit if unit else ''}")
+            amount_text = f"{_fmt_amount(total)}{' ' + unit if unit else ''}"
         else:
             total_g = entry["total_grams"] or 0.0
             dom_unit = entry["dominant_unit"] or "g"
@@ -1432,17 +1447,33 @@ def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(g
                 per_unit = entry["dominant_grams"] / entry["dominant_amount"] if entry["dominant_amount"] else 0.0
                 factor = per_unit if per_unit > 0 else 1.0
             converted = total_g / factor
-            lines.append(f"{name} - {_fmt_amount(converted)} {dom_unit}")
+            amount_text = f"{_fmt_amount(converted)} {dom_unit}"
+        items.append(ShoppingListItem(
+            name=name, amount=amount_text, ingredient_id=int(ing_id),
+            walmart_item_id=entry["walmart_item_id"],
+        ))
 
     for name, amount, unit in unmatched:
         if not name:
             continue
         amt_str = _fmt_amount(amount) if amount else ""
         suffix = f"{' ' + unit if unit else ''}" if amt_str else ""
-        lines.append(f"{name}{' - ' + amt_str + suffix if amt_str else ''}")
+        items.append(ShoppingListItem(name=name, amount=amt_str + suffix))
 
-    lines.sort(key=lambda s: s.lower())
-    return PlainTextResponse("\n".join(lines))
+    items.sort(key=lambda item: item.line.lower())
+    return items
+
+
+@router.post("/shopping-list", response_class=PlainTextResponse)
+def generate_shopping_list(payload: ShoppingListRequest, db: Session = Depends(get_db)):
+    items = _build_shopping_list(payload.recipe_ids, db)
+    return PlainTextResponse("\n".join(item.line for item in items))
+
+
+@router.post("/shopping-list/items", response_model=list[ShoppingListItem])
+def generate_shopping_list_items(payload: ShoppingListRequest, db: Session = Depends(get_db)):
+    """The same list as /shopping-list, one entry per line, plus what the Walmart links need."""
+    return _build_shopping_list(payload.recipe_ids, db)
 
 
 @router.get("/export-all")

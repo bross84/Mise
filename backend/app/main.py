@@ -93,6 +93,8 @@ def _migrate():
         ing_cols = {row[1] for row in result.fetchall()}
         if "serving_quantity" not in ing_cols:
             conn.execute(text("ALTER TABLE ingredients ADD COLUMN serving_quantity INTEGER DEFAULT 1"))
+        if "walmart_item_id" not in ing_cols:
+            conn.execute(text("ALTER TABLE ingredients ADD COLUMN walmart_item_id VARCHAR"))
 
         # Version 1 of PDF uploads incorrectly scoped documents to individual recipes.
         # Keep any files already uploaded through that version by making them available in
