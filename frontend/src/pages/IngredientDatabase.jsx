@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createIngredient, deleteIngredient, getIngredientAudit, getIngredients, updateIngredient } from '../api/client.js'
+import { walmartProductUrl } from '../utils/walmart.js'
 import NutritionFields, { CalorieMismatchNotice } from '../components/NutritionFields.jsx'
 import {
   emptyNutritionForm,
@@ -170,6 +171,8 @@ function IngredientDatabase() {
       name: ingredient.name,
       ...nutritionFormFromIngredient(ingredient),
       legacyUnit: isStandardUnit(ingredient.unit) ? null : ingredient.unit,
+      walmart: ingredient.walmart_item_id ? walmartProductUrl(ingredient.walmart_item_id) : '',
+      walmartOriginal: ingredient.walmart_item_id ? walmartProductUrl(ingredient.walmart_item_id) : '',
     })
     setActionError('')
   }
@@ -191,6 +194,8 @@ function IngredientDatabase() {
       await updateIngredient(editingId, {
         name: editDraft.name.trim(),
         ...nutritionFormToPayload(editDraft),
+        // Only send the Walmart link when it changed, so an untouched field is never re-validated.
+        ...(editDraft.walmart.trim() !== editDraft.walmartOriginal ? { walmart_item_id: editDraft.walmart } : {}),
         override_calorie_check: override,
       })
       setEditingId(null)
@@ -201,7 +206,8 @@ function IngredientDatabase() {
       if (isCalorieMismatch(err)) {
         setEditWarning(err.detail)
       } else {
-        setActionError(err instanceof Error ? err.message : 'Failed to update ingredient.')
+        // A bad Walmart address comes back as pydantic's "Value error, …".
+        setActionError(err instanceof Error ? err.message.replace(/^Value error,\s*/i, '') : 'Failed to update ingredient.')
       }
     } finally {
       setEditSaving(false)
@@ -367,6 +373,23 @@ function IngredientDatabase() {
                             legacyUnit={editDraft.legacyUnit}
                           />
                         </div>
+                        <div className="mt-4">
+                          <label htmlFor="edit-walmart" className="mb-1 block text-xs text-mise-500">
+                            Walmart product <span className="text-mise-600">(optional, for the shopping list cart button)</span>
+                          </label>
+                          <input
+                            id="edit-walmart"
+                            type="text"
+                            value={editDraft.walmart}
+                            onChange={(e) => updateEditDraft({ ...editDraft, walmart: e.target.value })}
+                            placeholder="Paste a walmart.com/ip/… address"
+                            autoComplete="off"
+                            className={`${fieldCls} sm:max-w-md`}
+                          />
+                        </div>
+                        {actionError && (
+                          <p className="mt-3 text-xs text-rose-400">{actionError}</p>
+                        )}
                         {editWarning && (
                           <div className="mt-3">
                             <CalorieMismatchNotice detail={editWarning} busy={editSaving} onConfirm={() => saveEdit(true)} />
@@ -463,6 +486,19 @@ function IngredientDatabase() {
                                 </p>
                               ) : (
                                 <p>No serving weight set, so pieces and servings can’t be converted.</p>
+                              )}
+                              {ingredient.walmart_item_id && (
+                                <p>
+                                  Walmart product:{' '}
+                                  <a
+                                    href={walmartProductUrl(ingredient.walmart_item_id)}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    className="font-medium text-mise-400 underline-offset-2 hover:text-mise-300 hover:underline"
+                                  >
+                                    item {ingredient.walmart_item_id}
+                                  </a>
+                                </p>
                               )}
                               {(reviewFlags[ingredient.id] ?? []).map((reason) => (
                                 <p key={reason} className="border-l-2 border-ember pl-3 text-mise-300">{reason}</p>

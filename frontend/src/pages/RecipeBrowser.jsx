@@ -382,7 +382,7 @@ function RecipeBrowser() {
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [exportingAll, setExportingAll] = useState(false)
-  const [shoppingListText, setShoppingListText] = useState(null)
+  const [shoppingListItems, setShoppingListItems] = useState(null)
   const [generatingList, setGeneratingList] = useState(false)
   const [activeTag, setActiveTag] = useState(null)
   const [thumbsFilter, setThumbsFilter] = useState(null)
@@ -445,8 +445,8 @@ function RecipeBrowser() {
     if (selectedIds.size === 0) return
     setGeneratingList(true)
     try {
-      const text = await generateShoppingList([...selectedIds])
-      setShoppingListText(text)
+      const listItems = await generateShoppingList([...selectedIds])
+      setShoppingListItems(listItems)
     } catch (err) {
       console.error('Failed to generate shopping list:', err)
       window.alert('Failed to generate shopping list. Please try again.')
@@ -557,7 +557,7 @@ function RecipeBrowser() {
   return (
     <section className="mx-auto w-full max-w-7xl">
       {showImport && <ImportRecipeModal onClose={() => setShowImport(false)} onImported={handleImported} />}
-      {shoppingListText !== null && <ShoppingListModal text={shoppingListText} onClose={() => setShoppingListText(null)} />}
+      {shoppingListItems !== null && <ShoppingListModal items={shoppingListItems} onClose={() => setShoppingListItems(null)} />}
 
       <header className="flex items-center justify-between gap-4">
         <div>

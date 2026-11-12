@@ -25,7 +25,7 @@ export default function MealPlan() {
   const { items, remove, clear, loading, loadError } = useMealPlan()
   const [removing, setRemoving] = useState(null)
   const [clearing, setClearing] = useState(false)
-  const [shoppingListText, setShoppingListText] = useState(null)
+  const [shoppingListItems, setShoppingListItems] = useState(null)
   const [generatingList, setGeneratingList] = useState(false)
   const [generatingForId, setGeneratingForId] = useState(null)
 
@@ -57,8 +57,8 @@ export default function MealPlan() {
   const handleGenerateSingle = async (recipeId, itemId) => {
     setGeneratingForId(itemId)
     try {
-      const text = await generateShoppingList([recipeId])
-      setShoppingListText(text)
+      const listItems = await generateShoppingList([recipeId])
+      setShoppingListItems(listItems)
     } catch (err) {
       console.error('Failed to generate shopping list:', err)
       window.alert('Failed to generate shopping list.')
@@ -72,8 +72,8 @@ export default function MealPlan() {
     setGeneratingList(true)
     try {
       const recipeIds = items.map((i) => i.recipe_id)
-      const text = await generateShoppingList(recipeIds)
-      setShoppingListText(text)
+      const listItems = await generateShoppingList(recipeIds)
+      setShoppingListItems(listItems)
     } catch (err) {
       console.error('Failed to generate shopping list:', err)
       window.alert('Failed to generate shopping list.')
@@ -84,8 +84,8 @@ export default function MealPlan() {
 
   return (
     <section className="mx-auto w-full max-w-3xl">
-      {shoppingListText !== null && (
-        <ShoppingListModal text={shoppingListText} onClose={() => setShoppingListText(null)} />
+      {shoppingListItems !== null && (
+        <ShoppingListModal items={shoppingListItems} onClose={() => setShoppingListItems(null)} />
       )}
 
       <header className="flex items-start justify-between gap-4">

@@ -245,14 +245,12 @@ export async function suggestTags({ recipeName, ingredients, instructions }) {
   return data.tags
 }
 
-export async function generateShoppingList(recipeIds) {
-  const response = await fetch(`${BASE_URL}/recipes/shopping-list`, {
+// One entry per shopping list line: { name, amount, line, ingredient_id, walmart_item_id }.
+export function generateShoppingList(recipeIds) {
+  return request('/recipes/shopping-list/items', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ recipe_ids: recipeIds }),
   })
-  if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
-  return response.text()
 }
 
 export function getCookbooks() {

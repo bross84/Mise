@@ -17,4 +17,7 @@ class Ingredient(Base):
     barcode = Column(String, nullable=True)
     serving_grams = Column(Float, nullable=True)
     serving_quantity = Column(Integer, default=1, server_default="1", nullable=True)
+    # Walmart item number (the digits at the end of a walmart.com/ip/... address), used to
+    # send the shopping list to a Walmart cart.
+    walmart_item_id = Column(String, nullable=True)
     created_at = Column(UTCDateTime, default=utcnow)
