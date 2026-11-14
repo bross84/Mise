@@ -3,22 +3,10 @@ import { Sparkles, X } from 'lucide-react'
 import { aiEditRecipe, updateRecipe } from '../api/client.js'
 import { buildUpdatePayload, unmatchedChanges } from './aiChanges.js'
 import AiChangeCard from './AiChangeCard.jsx'
+import { failureMessage } from './aiFailure.js'
 import { MarkdownText } from './MarkdownText.jsx'
 
 const REQUEST_TIMEOUT_MS = 100_000
-
-// What the cook sees when a request fails. Always says whether anything changed.
-function failureMessage(err, timedOut) {
-  if (err?.name === 'AbortError') {
-    return timedOut
-      ? 'The assistant didn’t answer within 100 seconds, so I stopped waiting. Nothing was changed. Try again, or ask for less at once.'
-      : 'Stopped. Nothing was changed.'
-  }
-  if ([502, 503, 504].includes(err?.status)) {
-    return `The assistant service didn’t respond (error ${err.status}). Nothing was changed. This is usually the AI provider being slow or briefly down. Try the same message again.`
-  }
-  return err instanceof Error ? `${err.message} Nothing was changed.` : 'The assistant request failed. Nothing was changed.'
-}
 
 // Applying a change whose ingredient isn't in the recipe would silently do nothing while the
 // panel reported "Applied". Refuse instead so the cook knows.
