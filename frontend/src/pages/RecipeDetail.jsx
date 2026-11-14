@@ -962,6 +962,7 @@ function RecipeDetail() {
       />
     )}
     <AiAssistPanel
+      key={id}
       recipeId={id}
       recipe={recipe}
       open={assistOpen}

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles, X } from 'lucide-react'
+import { Sparkles, Trash2, X } from 'lucide-react'
 import { aiEditRecipe, updateRecipe } from '../api/client.js'
 import { buildUpdatePayload, unmatchedChanges } from './aiChanges.js'
 import AiChangeCard from './AiChangeCard.jsx'
 import { failureMessage } from './aiFailure.js'
+import { loadHistory, saveHistory } from './aiHistory.js'
 import { MarkdownText } from './MarkdownText.jsx'
 
 const REQUEST_TIMEOUT_MS = 100_000
@@ -27,8 +28,9 @@ const EXAMPLES = [
   'The instructions mention a skillet that isn’t in the ingredients — add it',
 ]
 
+// Mounted with key={recipeId}, so each recipe gets its own history and switching recipes reloads it.
 export default function AiAssistPanel({ recipeId, recipe, open, onClose, onApplied }) {
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages] = useState(() => loadHistory(recipeId))
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [sendingDraft, setSendingDraft] = useState(false)
@@ -45,6 +47,16 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, sending])
+
+  useEffect(() => {
+    saveHistory(recipeId, messages)
+  }, [recipeId, messages])
+
+  const clearChat = () => {
+    if (sending) return
+    if (!window.confirm('Clear this recipe’s assistant chat? This can’t be undone.')) return
+    setMessages([])
+  }
 
   // draft=false is a plain conversation: the server never returns change cards for it.
   const send = async (text, draft = false) => {
@@ -121,6 +133,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
             ? {
                 ...x,
                 busy: false,
+                appliedIds: accepted.map((c) => c.id),
                 resultText: `Applied ${accepted.length} change${accepted.length === 1 ? '' : 's'}.`,
               }
             : x,
@@ -167,6 +180,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
       onApplied?.(updated)
       setSuggestionStatus(msgId, suggestionId, {
         busy: false,
+        appliedIds: accepted.map((c) => c.id),
         resultText: `Applied ${accepted.length} change${accepted.length === 1 ? '' : 's'}.`,
       })
     } catch (err) {
@@ -202,14 +216,27 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
             <Sparkles size={15} className="text-ember" />
             <h2 className="font-display text-lg font-semibold text-mise-300">Recipe assistant</h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded border border-mise-800 p-1.5 text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-          >
-            <X size={15} />
-          </button>
+          <div className="flex items-center gap-2">
+            {messages.length > 0 && (
+              <button
+                type="button"
+                onClick={clearChat}
+                disabled={sending}
+                className="flex items-center gap-1.5 rounded border border-mise-800 px-2 py-1 text-xs text-mise-500 transition hover:border-mise-700 hover:text-mise-300 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+              >
+                <Trash2 size={13} />
+                Clear chat
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded border border-mise-800 p-1.5 text-mise-500 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            >
+              <X size={15} />
+            </button>
+          </div>
         </div>
 
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
@@ -256,6 +283,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
               {m.role === 'assistant' && !m.error && m.changes?.length > 0 && (
                 <AiChangeCard
                   changes={m.changes}
+                  selectedIds={m.appliedIds}
                   busy={Boolean(m.busy)}
                   resultText={m.resultText}
                   onApply={(accepted) => applyChangeSet(m.id, accepted)}
@@ -274,6 +302,7 @@ export default function AiAssistPanel({ recipeId, recipe, open, onClose, onAppli
                       title={s.title}
                       rationale={s.rationale}
                       changes={s.changes}
+                      selectedIds={m.suggestionStatus?.[s.id]?.appliedIds}
                       busy={Boolean(m.suggestionStatus?.[s.id]?.busy)}
                       resultText={m.suggestionStatus?.[s.id]?.resultText}
                       onApply={(accepted) => applySuggestion(m.id, s.id, accepted)}
