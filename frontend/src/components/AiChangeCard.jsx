@@ -52,8 +52,10 @@ function opLabel(op) {
   return { text: 'Change', cls: 'border-mise-700 text-mise-500' }
 }
 
-export default function AiChangeCard({ title, rationale, changes, busy, resultText, onApply, onDismiss }) {
-  const [selected, setSelected] = useState(() => new Set(changes.map((c) => c.id)))
+// selectedIds: which changes were ticked when the card was applied, so a restored card shows
+// exactly what went in. Omitted for a fresh card, which starts with everything ticked.
+export default function AiChangeCard({ title, rationale, changes, selectedIds, busy, resultText, onApply, onDismiss }) {
+  const [selected, setSelected] = useState(() => new Set(selectedIds ?? changes.map((c) => c.id)))
   const locked = Boolean(resultText) || busy
 
   const toggle = (id) => {
