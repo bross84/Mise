@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mise: Send to Mise
 // @namespace    mise
-// @version      1.0
+// @version      1.1
 // @description  On a Walmart product page opened from Mise's shopping list, adds a "Send to Mise" button that links the product to the ingredient.
 // @match        https://www.walmart.com/*
 // @grant        none
@@ -12,6 +12,8 @@
 // Sends the same message as the bookmarklet in frontend/src/utils/walmart.js; keep them in sync.
 // It only shows in a window Mise opened (one with an opener), so normal Walmart shopping is
 // untouched, and it reads the item number from the address rather than the page layout.
+// Keep this file plain ASCII: it's served without a charset, so script managers may read it as
+// Latin-1 and turn characters like a checkmark into mojibake. Use \u escapes instead.
 // Walmart moves between pages without reloading, so the address is re-checked on a timer.
 (function () {
   'use strict'
@@ -62,7 +64,7 @@
         '*',
       )
       // Mise closes this window once it has saved the link.
-      el.textContent = 'Sent ✓'
+      el.textContent = 'Sent \u2713'
     })
     return el
   }
