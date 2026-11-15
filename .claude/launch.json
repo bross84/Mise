@@ -14,6 +14,12 @@
       "port": 5174
     },
     {
+      "name": "mise-frontend-shoplist-fix",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/bross/AppData/Local/Temp/claude/d1834211f6de1b00/ad58ca7f-6bfc-4ff2-b1b4-70b93402f58f/scratchpad/mise-shoplist/frontend", "run", "dev", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
+    },
+    {
       "name": "mise-backend",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--app-dir", "backend", "--port", "8001"],
