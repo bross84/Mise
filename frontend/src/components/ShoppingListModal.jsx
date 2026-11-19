@@ -135,6 +135,8 @@ export default function ShoppingListModal({ items: initialItems, onClose }) {
   const [notice, setNotice] = useState(null) // { ingredientId, text, error }
   const [showSetup, setShowSetup] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Rows unchecked as "already have it", by index. Only for this list; it resets on reopen.
+  const [skipped, setSkipped] = useState(() => new Set())
   const titleId = useId()
   const timerRef = useRef(null)
   const pickerRef = useRef(null)
@@ -213,8 +215,19 @@ export default function ShoppingListModal({ items: initialItems, onClose }) {
     setPicking(null)
   }
 
-  const text = items.map((item) => item.line).join('\n')
-  const linkedIds = items.map((item) => item.walmart_item_id).filter(Boolean)
+  const toggleSkipped = (index) => {
+    setSkipped((current) => {
+      const next = new Set(current)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  // Unchecked rows are left out of both Copy and the Walmart cart.
+  const needed = items.filter((_, index) => !skipped.has(index))
+  const text = needed.map((item) => item.line).join('\n')
+  const linkedIds = needed.map((item) => item.walmart_item_id).filter(Boolean)
 
   const handleCopy = async () => {
     try {
@@ -252,13 +265,23 @@ export default function ShoppingListModal({ items: initialItems, onClose }) {
               const linkable = item.ingredient_id != null
               const isPicking = linkable && picking?.ingredientId === item.ingredient_id
               const rowNotice = linkable && notice?.ingredientId === item.ingredient_id ? notice : null
+              const isSkipped = skipped.has(index)
               return (
                 <li key={`${item.line}-${index}`} className="px-3 py-2">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="min-w-0 text-sm text-mise-300">
-                      {item.name}
-                      {item.amount && <span className="text-mise-500"> · {item.amount}</span>}
-                    </p>
+                    <label className={`flex min-w-0 cursor-pointer items-center gap-2.5 text-sm ${isSkipped ? 'text-mise-600 line-through' : 'text-mise-300'}`}>
+                      <input
+                        type="checkbox"
+                        checked={!isSkipped}
+                        onChange={() => toggleSkipped(index)}
+                        className="h-4 w-4 shrink-0 cursor-pointer accent-ember"
+                        aria-label={`Need ${item.name}`}
+                      />
+                      <span className="min-w-0">
+                        {item.name}
+                        {item.amount && <span className={isSkipped ? '' : 'text-mise-500'}> · {item.amount}</span>}
+                      </span>
+                    </label>
                     <div className="flex shrink-0 items-center gap-1">
                       {item.walmart_item_id ? (
                         <a
@@ -323,6 +346,7 @@ export default function ShoppingListModal({ items: initialItems, onClose }) {
         <SetupHelp open={showSetup} onToggle={setShowSetup} />
 
         <p className="text-xs text-mise-500">
+          Uncheck what you already have.{' '}
           {linkedIds.length > 0
             ? 'Adds one of each linked product to your Walmart cart for you to review. Nothing is bought.'
             : 'Link items to Walmart products to send them to your cart in one go.'}
@@ -335,7 +359,8 @@ export default function ShoppingListModal({ items: initialItems, onClose }) {
           <button
             type="button"
             onClick={handleCopy}
-            className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
+            disabled={needed.length === 0}
+            className="inline-flex items-center gap-2 rounded border border-mise-800 px-3 py-2 text-sm text-mise-400 transition hover:border-mise-700 hover:text-mise-300 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           >
             <ClipboardCopy size={14} />
             {copied ? 'Copied!' : 'Copy'}
@@ -348,7 +373,7 @@ export default function ShoppingListModal({ items: initialItems, onClose }) {
               className="inline-flex items-center gap-2 rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 transition hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
             >
               <ShoppingCart size={14} />
-              Walmart cart ({linkedIds.length} of {items.length})
+              Walmart cart ({linkedIds.length} of {needed.length})
               <ExternalLink size={12} aria-hidden="true" />
             </a>
           ) : (
@@ -358,7 +383,7 @@ export default function ShoppingListModal({ items: initialItems, onClose }) {
               className="inline-flex items-center gap-2 rounded bg-ember px-4 py-2 text-sm font-semibold text-mise-950 opacity-50"
             >
               <ShoppingCart size={14} />
-              Walmart cart (0 of {items.length})
+              Walmart cart (0 of {needed.length})
             </button>
           )}
         </div>
